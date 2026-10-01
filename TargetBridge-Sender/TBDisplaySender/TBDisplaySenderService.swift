@@ -11,6 +11,30 @@ import Network
 @preconcurrency import ScreenCaptureKit
 import VideoToolbox
 
+/// SDR capture quantizes the compositor output to 1/255 steps, which bands
+/// dark gradients. HEVC sessions to a Main10-capable receiver capture with
+/// extended precision and encode 10-bit.
+enum TBVideoBitDepthPolicy {
+    /// Extended-range capture needs ScreenCaptureKit on macOS 15+ and Apple Silicon;
+    /// elsewhere frames stay 8-bit and Main10 would only cost encode time.
+    static var platformSupportsExtendedCapture: Bool {
+        #if arch(arm64)
+        if #available(macOS 15.0, *) { return true }
+        #endif
+        return false
+    }
+
+    static func usesTenBit(codecType: CMVideoCodecType,
+                           usesRawNV12: Bool,
+                           receiverSupportsMain10: Bool?,
+                           extendedCaptureAvailable: Bool = platformSupportsExtendedCapture,
+                           override: String?) -> Bool {
+        if override == "0" { return false }
+        return extendedCaptureAvailable && !usesRawNV12 &&
+            codecType == kCMVideoCodecType_HEVC && receiverSupportsMain10 == true
+    }
+}
+
 /// Reserve network capacity before encoding. Once encoded, even a non-keyframe
 /// may be a reference for subsequent frames and must not be discarded locally.
 enum TBVideoQueueBudget {
@@ -478,6 +502,7 @@ private final class TBVideoPipeline: @unchecked Sendable {
     private let displayName: String
     private let displayID: CGDirectDisplayID
     private let usesRawNV12: Bool
+    let usesTenBit: Bool
     private let onFirstFrame: @Sendable () -> Void
 
     // Confined to `queue`.
@@ -509,6 +534,7 @@ private final class TBVideoPipeline: @unchecked Sendable {
          displayName: String,
          displayID: CGDirectDisplayID,
          usesRawNV12: Bool,
+         usesTenBit: Bool,
          ackAlreadySent: Bool,
          onFirstFrame: @escaping @Sendable () -> Void) {
         self.preset = preset
@@ -517,6 +543,7 @@ private final class TBVideoPipeline: @unchecked Sendable {
         self.displayName = displayName
         self.displayID = displayID
         self.usesRawNV12 = usesRawNV12
+        self.usesTenBit = usesTenBit
         self.frameRatePacer = TBFrameRatePacer(maximumFrameRate: preset.expectedFrameRate)
         self.ackSent = ackAlreadySent
         self.onFirstFrame = onFirstFrame
@@ -638,7 +665,14 @@ private final class TBVideoPipeline: @unchecked Sendable {
 
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
         if codecType == kCMVideoCodecType_HEVC {
-            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_HEVC_Main_AutoLevel)
+            let profileStatus = VTSessionSetProperty(
+                session,
+                key: kVTCompressionPropertyKey_ProfileLevel,
+                value: usesTenBit ? kVTProfileLevel_HEVC_Main10_AutoLevel : kVTProfileLevel_HEVC_Main_AutoLevel
+            )
+            if usesTenBit, profileStatus != noErr {
+                TBLog.connection.warning("encoder: HEVC Main10 rejected (\(profileStatus, privacy: .public)), encoding Main")
+            }
         } else {
             VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_H264_Main_AutoLevel)
         }
@@ -2590,6 +2624,12 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             let preset = capturePreset
             let usesRawNV12 = rawNV12Enabled(for: profile)
             let codecType = resolvedCodecType(for: preset, profile: profile)
+            let usesTenBit = TBVideoBitDepthPolicy.usesTenBit(
+                codecType: codecType,
+                usesRawNV12: usesRawNV12,
+                receiverSupportsMain10: profile.supportsHEVCMain10,
+                override: ProcessInfo.processInfo.environment["TB_HEVC_10BIT"]
+            )
             let codecName = usesRawNV12 ? "NV12 RAW" : codecName(for: codecType)
             activeCodecType = usesRawNV12 ? nil : codecType
             activeCodecName = codecName
@@ -2606,6 +2646,7 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
                 displayName: session.displayName,
                 displayID: session.displayID,
                 usesRawNV12: usesRawNV12,
+                usesTenBit: usesTenBit,
                 ackAlreadySent: sessionAckSent,
                 onFirstFrame: { [weak self] in
                     Task { @MainActor in self?.handleFirstEncodedFrame() }
@@ -2613,7 +2654,7 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             )
             guard pipeline.start() else { return false }
             self.pipeline = pipeline
-            TBLog.connection.info("capture: pipeline started preset=\(preset.rawValue, privacy: .public) source=\(String(describing: self.captureSource), privacy: .public) codec=\(codecName, privacy: .public) rawNV12=\(usesRawNV12, privacy: .public)")
+            TBLog.connection.info("capture: pipeline started preset=\(preset.rawValue, privacy: .public) source=\(String(describing: self.captureSource), privacy: .public) codec=\(codecName, privacy: .public) rawNV12=\(usesRawNV12, privacy: .public) tenBit=\(usesTenBit, privacy: .public)")
 
             let display: SCDisplay
             if captureSource == .desktopMirror {
@@ -2638,20 +2679,30 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             let usesCursorOverlay = inputControlRole.usesLowLatencyCursorOverlay(
                 largeCursorEnabled: largeCursor
             )
-            let configuration = SCStreamConfiguration()
-            configuration.width = preset.width
-            configuration.height = preset.height
-            configuration.minimumFrameInterval = CMTime(value: 1, timescale: Int32(preset.captureRequestFrameRate))
-            configuration.queueDepth = preset.queueDepth
-            configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-            configuration.shouldBeOpaque = true
-            configuration.showsCursor = !usesCursorOverlay
-            configuration.scalesToFit = true
-            configuration.captureResolution = preset.captureResolution
-            configuration.capturesAudio = shouldRelayAudio
-            configuration.excludesCurrentProcessAudio = true
-            configuration.sampleRate = 48000
-            configuration.channelCount = 2
+            func makeConfiguration(tenBit: Bool) -> SCStreamConfiguration {
+                let configuration = SCStreamConfiguration()
+                configuration.width = preset.width
+                configuration.height = preset.height
+                configuration.minimumFrameInterval = CMTime(value: 1, timescale: Int32(preset.captureRequestFrameRate))
+                configuration.queueDepth = preset.queueDepth
+                configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+                if tenBit, #available(macOS 15.0, *) {
+                    // Extended range keeps compositor precision; sRGB + BT.709 keep SDR color.
+                    configuration.captureDynamicRange = .hdrLocalDisplay
+                    configuration.pixelFormat = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+                    configuration.colorSpaceName = CGColorSpace.sRGB
+                    configuration.colorMatrix = CGDisplayStream.yCbCrMatrix_ITU_R_709_2
+                }
+                configuration.shouldBeOpaque = true
+                configuration.showsCursor = !usesCursorOverlay
+                configuration.scalesToFit = true
+                configuration.captureResolution = preset.captureResolution
+                configuration.capturesAudio = shouldRelayAudio
+                configuration.excludesCurrentProcessAudio = true
+                configuration.sampleRate = 48000
+                configuration.channelCount = 2
+                return configuration
+            }
 
             streamResolutionText = TBDisplaySenderL10n.streamSummary(
                 preset: preset,
@@ -2660,44 +2711,62 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
                 codecName: codecName
             )
 
-            let delegate = CaptureDelegate()
-            delegate.onFrameStatus = { state in
-                pipeline.observeCaptureStatus(state)
-            }
-            delegate.onFrame = { sampleBuffer in
-                // ScreenCaptureKit already invokes this closure on pipeline.queue.
-                // Encode immediately so its IOSurface returns to WindowServer
-                // without an extra dispatch hop.
-                pipeline.encode(sampleBuffer)
-            }
-            delegate.onAudio = { [weak self] sampleBuffer in
-                self?.processAudio(sampleBuffer)
-            }
-            delegate.onError = { [weak self] error in
-                Task { @MainActor [weak self] in
-                    guard let self, self.pipeline === pipeline else { return }
-                    self.setStatus(.captureError(self.formattedCaptureErrorMessage(for: error)))
-                    self.stop(resetStatusTo: nil)
+            func makeDelegate() -> CaptureDelegate {
+                let delegate = CaptureDelegate()
+                delegate.onFrameStatus = { state in
+                    pipeline.observeCaptureStatus(state)
                 }
+                delegate.onFrame = { sampleBuffer in
+                    // ScreenCaptureKit already invokes this closure on pipeline.queue.
+                    // Encode immediately so its IOSurface returns to WindowServer
+                    // without an extra dispatch hop.
+                    pipeline.encode(sampleBuffer)
+                }
+                delegate.onAudio = { [weak self] sampleBuffer in
+                    self?.processAudio(sampleBuffer)
+                }
+                delegate.onError = { [weak self, weak delegate] error in
+                    Task { @MainActor [weak self] in
+                        // Ignore errors from a stream that was replaced by a retry.
+                        guard let self, self.pipeline === pipeline,
+                              let delegate, self.captureDelegate === delegate else { return }
+                        self.setStatus(.captureError(self.formattedCaptureErrorMessage(for: error)))
+                        self.stop(resetStatusTo: nil)
+                    }
+                }
+                return delegate
             }
-            captureDelegate = delegate
 
             let filter = SCContentFilter(display: display, excludingWindows: [])
             captureDisplayText = TBDisplaySenderL10n.captureDisplaySCDisplay(language, id: display.displayID)
-            let stream = SCStream(filter: filter, configuration: configuration, delegate: delegate)
-            try stream.addStreamOutput(
-                delegate,
-                type: .screen,
-                sampleHandlerQueue: pipeline.queue
-            )
-            if shouldRelayAudio {
+            func makeStream(_ configuration: SCStreamConfiguration) throws -> SCStream {
+                let delegate = makeDelegate()
+                captureDelegate = delegate
+                let stream = SCStream(filter: filter, configuration: configuration, delegate: delegate)
                 try stream.addStreamOutput(
                     delegate,
-                    type: .audio,
-                    sampleHandlerQueue: DispatchQueue(label: "fd.tbmonitor.sender.audio", qos: .userInteractive)
+                    type: .screen,
+                    sampleHandlerQueue: pipeline.queue
                 )
+                if shouldRelayAudio {
+                    try stream.addStreamOutput(
+                        delegate,
+                        type: .audio,
+                        sampleHandlerQueue: DispatchQueue(label: "fd.tbmonitor.sender.audio", qos: .userInteractive)
+                    )
+                }
+                return stream
             }
-            try await stream.startCapture()
+            var stream = try makeStream(makeConfiguration(tenBit: pipeline.usesTenBit))
+            do {
+                try await stream.startCapture()
+            } catch {
+                guard pipeline.usesTenBit else { throw error }
+                // Extended-range capture rejected: retry with the plain 8-bit configuration.
+                TBLog.connection.warning("capture: extended-range capture failed (\(error.localizedDescription, privacy: .public)), retrying 8-bit")
+                stream = try makeStream(makeConfiguration(tenBit: false))
+                try await stream.startCapture()
+            }
             scStream = stream
             isStreaming = true
             if usesCursorOverlay { startCursorUpdates(displayID: display.displayID) }

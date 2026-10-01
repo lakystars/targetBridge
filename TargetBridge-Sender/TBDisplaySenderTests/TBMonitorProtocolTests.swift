@@ -57,6 +57,22 @@ final class TBMonitorProtocolTests: XCTestCase {
         """.utf8)
         let profile = try JSONDecoder().decode(TBMonitorDisplayProfile.self, from: olderProfile)
         XCTAssertNil(profile.supportsRawNV12)
+        XCTAssertNil(profile.supportsHEVCMain10)
+    }
+
+    func testDisplayProfileDecodesMain10Support() throws {
+        let data = Data("""
+        {
+          "receiverName": "Receiver",
+          "panelWidth": 5120, "panelHeight": 2880,
+          "modeWidth": 2560, "modeHeight": 1440,
+          "refreshRate": 60, "hiDPI": true,
+          "captureWidth": 5120, "captureHeight": 2880,
+          "supportsHEVCMain10": true
+        }
+        """.utf8)
+        let profile = try JSONDecoder().decode(TBMonitorDisplayProfile.self, from: data)
+        XCTAssertEqual(profile.supportsHEVCMain10, true)
     }
 
     func testDrainPacketRoundTrip() throws {
