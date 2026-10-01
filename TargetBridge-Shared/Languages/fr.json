@@ -50,6 +50,7 @@
   "sender.mode_line_4": "Le receiver passe en plein écran seulement à l’arrivée de la première image.",
   "sender.mode_line_5": "Choisissez la source, puis équilibrez fluidité et clarté avec le profil de flux.",
   "sender.toggle.show_menu_bar_icon": "Afficher l’icône dans la barre des menus",
+  "sender.toggle.low_latency_cursor": "Curseur à faible latence sur le receiver",
   "sender.toggle.large_cursor": "Grand curseur sur le receiver",
   "sender.toggle.prevent_display_sleep": "Empêcher l’économiseur d’écran / la veille de l’écran pendant le flux",
   "sender.toggle.auto_restart_on_wake": "Redémarrer automatiquement la capture après la sortie de veille / le déverrouillage",

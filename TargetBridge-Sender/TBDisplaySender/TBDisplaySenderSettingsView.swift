@@ -53,6 +53,8 @@ struct TBDisplaySenderSettingsView: View {
 
                 settingsSection(title: interfaceTitle) {
                     Toggle(TBDisplaySenderL10n.showMenuBarIcon(service.language), isOn: $service.showsMenuBarIcon)
+                    Toggle(TBDisplaySenderL10n.lowLatencyCursor(service.language), isOn: $service.lowLatencyCursor)
+                        .disabled(service.anyConnected)
                     Toggle(TBDisplaySenderL10n.largeCursor(service.language), isOn: $service.largeCursor)
                         .disabled(service.anyConnected)
                     Toggle(TBDisplaySenderL10n.preventDisplaySleep(service.language), isOn: $service.preventDisplaySleep)

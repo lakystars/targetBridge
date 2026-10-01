@@ -8,50 +8,50 @@ import XCTest
 /// silently reroute automation traffic.
 @MainActor
 final class TBSenderAutomationParsingTests: XCTestCase {
-    func testReceiverControlKeepsNativeCursorWithoutLargeCursor() {
+    func testReceiverControlKeepsNativeCursorWithoutCursorOverlay() {
         XCTAssertFalse(
             TBInputControlRole.receiverMaster.usesLowLatencyCursorOverlay(
-                largeCursorEnabled: false
+                cursorOverlayEnabled: false
             )
         )
         XCTAssertFalse(
             TBInputControlRole.senderMaster.usesLowLatencyCursorOverlay(
-                largeCursorEnabled: false
+                cursorOverlayEnabled: false
             )
         )
         XCTAssertFalse(
             TBInputControlRole.off.usesLowLatencyCursorOverlay(
-                largeCursorEnabled: false
+                cursorOverlayEnabled: false
             )
         )
         XCTAssertTrue(
             TBInputControlRole.off.usesLowLatencyCursorOverlay(
-                largeCursorEnabled: true
+                cursorOverlayEnabled: true
             )
         )
 
         XCTAssertFalse(
             TBInputControlRole.receiverMaster.changesCursorCaptureMode(
                 from: .off,
-                largeCursorEnabled: false
+                cursorOverlayEnabled: false
             )
         )
         XCTAssertFalse(
             TBInputControlRole.off.changesCursorCaptureMode(
                 from: .receiverMaster,
-                largeCursorEnabled: false
+                cursorOverlayEnabled: false
             )
         )
         XCTAssertFalse(
             TBInputControlRole.senderMaster.changesCursorCaptureMode(
                 from: .off,
-                largeCursorEnabled: false
+                cursorOverlayEnabled: false
             )
         )
         XCTAssertFalse(
             TBInputControlRole.receiverMaster.changesCursorCaptureMode(
                 from: .off,
-                largeCursorEnabled: true
+                cursorOverlayEnabled: true
             )
         )
     }

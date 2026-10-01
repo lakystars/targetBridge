@@ -50,6 +50,7 @@
   "sender.mode_line_4": "Der Empfänger schaltet erst auf Vollbild um, wenn der erste Bildinhalt ankommt.",
   "sender.mode_line_5": "Quelle wählen, dann Bewegungsfluss und Schärfe mit dem Stream-Profil abstimmen.",
   "sender.toggle.show_menu_bar_icon": "Symbol in Menüleiste anzeigen",
+  "sender.toggle.low_latency_cursor": "Zeiger mit geringer Latenz auf dem Empfänger",
   "sender.toggle.large_cursor": "Großer Zeiger auf dem Empfänger",
   "sender.toggle.prevent_display_sleep": "Bildschirmschoner und Display-Ruhezustand beim Streamen verhindern",
   "sender.toggle.auto_restart_on_wake": "Aufnahme nach Aufwachen/Entsperren automatisch neu starten",

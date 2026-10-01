@@ -50,6 +50,7 @@
   "sender.mode_line_4": "The receiver switches to fullscreen only when the first frame arrives.",
   "sender.mode_line_5": "Choose the source, then balance motion and clarity with the stream profile.",
   "sender.toggle.show_menu_bar_icon": "Show icon in top bar",
+  "sender.toggle.low_latency_cursor": "Low-latency cursor on receiver",
   "sender.toggle.large_cursor": "Large cursor on receiver",
   "sender.toggle.prevent_display_sleep": "Prevent screensaver / display sleep while streaming",
   "sender.toggle.auto_restart_on_wake": "Auto-restart capture after wake / unlock",
