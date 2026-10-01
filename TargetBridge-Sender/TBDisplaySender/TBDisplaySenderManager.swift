@@ -111,6 +111,7 @@ final class TBDisplaySenderService: ObservableObject {
     private var addonCancellable: AnyCancellable?
     private var activationObserver: NSObjectProtocol?
     private var clipboardTimer: Timer?
+    private var interfaceMonitorTimer: Timer?
     private var lastClipboardChangeCount: Int = NSPasteboard.general.changeCount
 
     private init() {
@@ -131,6 +132,7 @@ final class TBDisplaySenderService: ObservableObject {
         addonStore.refresh()
         restorePersistedSessions()
         startClipboardMonitoring()
+        startInterfaceMonitoring()
         activationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
@@ -467,7 +469,11 @@ final class TBDisplaySenderService: ObservableObject {
     }
 
     func refreshLocalInterfaces() {
-        localInterfaces = detectLocalInterfaces()
+        applyLocalInterfaces(detectLocalInterfaces())
+    }
+
+    private func applyLocalInterfaces(_ interfaces: [TBLocalLinkInterface]) {
+        localInterfaces = interfaces
         receiverDiscovery.refresh()
         normalizeSessionInterfaces()
         objectWillChange.send()
@@ -751,6 +757,25 @@ final class TBDisplaySenderService: ObservableObject {
         }
     }
 
+    // The Thunderbolt Bridge address appears seconds after the cable links up.
+    // Poll so sessions become connectable without a manual refresh.
+    private func startInterfaceMonitoring() {
+        interfaceMonitorTimer?.invalidate()
+        interfaceMonitorTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshLocalInterfacesIfChanged()
+            }
+        }
+    }
+
+    private func refreshLocalInterfacesIfChanged() {
+        let detected = detectLocalInterfaces()
+        guard detected != localInterfaces else { return }
+        let summary = detected.map { "\($0.name)=\($0.ip)" }.joined(separator: ", ")
+        TBLog.connection.info("interfaces changed: [\(summary, privacy: .public)]")
+        applyLocalInterfaces(detected)
+    }
+
     private func pollClipboardIfNeeded() {
         guard let session = sessions.first(where: { $0.inputControlRole == .senderMaster && ($0.isConnected || $0.isStreaming) }) else {
             lastClipboardChangeCount = NSPasteboard.general.changeCount
@@ -779,6 +804,8 @@ final class TBDisplaySenderService: ObservableObject {
     private func normalizeSessionInterfaces() {
         for session in sessions {
             let available = availableInterfaces(for: session.transportKind)
+            // Keep the user's choice while the link is temporarily down.
+            guard !available.isEmpty else { continue }
             let validIPs = Set(available.map(\.ip))
             let fallbackIP = suggestedInterfaceForNewSession(transportKind: session.transportKind)?.ip
                 ?? available.first?.ip

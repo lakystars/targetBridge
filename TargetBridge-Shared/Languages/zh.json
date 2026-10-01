@@ -83,6 +83,7 @@
   "sender.diagnostics.screen_recording_missing": "请在“隐私与安全性 > 屏幕录制”中允许 TargetBridge。",
   "sender.diagnostics.local_link": "本地连接",
   "sender.diagnostics.local_link_missing": "请先选择一个有效的本地接口再连接。",
+  "sender.diagnostics.thunderbolt_link_inactive": "Thunderbolt Bridge 链路未激活。请重新连接线缆并等待几秒钟。",
   "sender.diagnostics.thunderbolt_link_ready": "已在 %{interface} 上选择 Thunderbolt Bridge。",
   "sender.diagnostics.thunderbolt_link_unexpected": "已选择 Thunderbolt Bridge，但 %{interface} 不是 bridge 接口。",
   "sender.diagnostics.network_link_selected": "已在 %{interface} 上选择 Network Link；延迟可能会变化。",

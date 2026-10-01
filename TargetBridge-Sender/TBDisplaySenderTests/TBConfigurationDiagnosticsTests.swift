@@ -15,6 +15,21 @@ final class TBConfigurationDiagnosticsTests: XCTestCase {
         XCTAssertEqual(checks.first(where: { $0.id == "local_link" })?.state, .attention)
     }
 
+    func testThunderboltTransportReportsInactiveLinkWhenNoBridgeInterface() {
+        let check = TBConfigurationDiagnostics.checks(for: baseSnapshot(localInterfaceName: nil))
+            .first(where: { $0.id == "local_link" })
+        XCTAssertEqual(check?.state, .attention)
+        XCTAssertEqual(check?.detailKey, "sender.diagnostics.thunderbolt_link_inactive")
+    }
+
+    func testNetworkTransportAsksForInterfaceWhenNoneSelected() {
+        var snapshot = baseSnapshot(localInterfaceName: nil)
+        snapshot.transportIsThunderbolt = false
+        let check = TBConfigurationDiagnostics.checks(for: snapshot)
+            .first(where: { $0.id == "local_link" })
+        XCTAssertEqual(check?.detailKey, "sender.diagnostics.local_link_missing")
+    }
+
     func testReceiverControlChecksBothSidesOfInputRelay() {
         let checks = TBConfigurationDiagnostics.checks(for: baseSnapshot(requiresSenderAccessibility: true, senderAccessibilityGranted: false, requiresReceiverInputMonitoring: true, receiverInputMonitoringGranted: false))
 

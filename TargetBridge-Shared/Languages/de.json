@@ -83,6 +83,7 @@
   "sender.diagnostics.screen_recording_missing": "Erlaube TargetBridge unter Datenschutz & Sicherheit > Bildschirmaufnahme.",
   "sender.diagnostics.local_link": "Lokale Verbindung",
   "sender.diagnostics.local_link_missing": "Wähle vor dem Verbinden eine aktive lokale Schnittstelle.",
+  "sender.diagnostics.thunderbolt_link_inactive": "Die Thunderbolt-Bridge-Verbindung ist nicht aktiv. Stecke das Kabel neu ein und warte einige Sekunden.",
   "sender.diagnostics.thunderbolt_link_ready": "Thunderbolt Bridge ist auf %{interface} ausgewählt.",
   "sender.diagnostics.thunderbolt_link_unexpected": "Thunderbolt Bridge ist ausgewählt, aber %{interface} ist keine Bridge-Schnittstelle.",
   "sender.diagnostics.network_link_selected": "Network Link ist auf %{interface} ausgewählt; die Latenz kann variieren.",

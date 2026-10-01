@@ -48,7 +48,11 @@ enum TBConfigurationDiagnostics {
 
     private static func localLinkCheck(_ snapshot: TBConfigurationDiagnosticSnapshot) -> TBConfigurationCheck {
         guard let interface = snapshot.localInterfaceName, !interface.isEmpty else {
-            return check("local_link", .attention, "sender.diagnostics.local_link", "sender.diagnostics.local_link_missing")
+            // No 169.254 address on bridge0 means the Thunderbolt link is down.
+            let detail = snapshot.transportIsThunderbolt
+                ? "sender.diagnostics.thunderbolt_link_inactive"
+                : "sender.diagnostics.local_link_missing"
+            return check("local_link", .attention, "sender.diagnostics.local_link", detail)
         }
         let isBridge = interface.lowercased().hasPrefix("bridge")
         let state: TBConfigurationCheckState = snapshot.transportIsThunderbolt && !isBridge ? .attention : .passed
