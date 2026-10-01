@@ -87,6 +87,7 @@
   "sender.diagnostics.local_link": "本地连接",
   "sender.diagnostics.local_link_missing": "请先选择一个有效的本地接口再连接。",
   "sender.diagnostics.thunderbolt_link_inactive": "没有 Thunderbolt Bridge 地址（169.254.x.x）。请重新连接线缆并等待几秒钟；Thunderbolt Bridge 上手动设置的 IP 不会被使用。",
+  "sender.diagnostics.thunderbolt_link_usb_only": "线缆以 USB 而非 Thunderbolt 方式连接。请使用 Thunderbolt 3/4 或 USB4 线缆并插紧，或换一个端口；如果 Thunderbolt 线缆仍显示为 USB，请让这台 Mac 睡眠后唤醒，或重新启动。",
   "sender.diagnostics.color_depth": "色深",
   "sender.diagnostics.color_depth_pending": "开始串流后显示。",
   "sender.diagnostics.color_depth_ten_bit": "10 位色彩已启用（HEVC Main10）。",

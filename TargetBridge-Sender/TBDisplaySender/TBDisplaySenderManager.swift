@@ -262,7 +262,15 @@ final class TBDisplaySenderService: ObservableObject {
             receiverAccessibilityGranted: session.receiverAccessibilityTrustedHint,
             colorDepth: session.colorDepthState
         )
-        return TBConfigurationDiagnostics.checks(for: snapshot)
+        var checkedSnapshot = snapshot
+        if checkedSnapshot.transportIsThunderbolt, checkedSnapshot.localInterfaceName == nil {
+            // Explain a Thunderbolt cable that came up as plain USB.
+            checkedSnapshot.thunderboltCableUSBOnly = TBConnectionDiagnostics.thunderboltCableFellBackToUSB(
+                ports: TBConnectionDiagnostics.usbCPortStates(),
+                interfaces: interfaces
+            )
+        }
+        return TBConfigurationDiagnostics.checks(for: checkedSnapshot)
     }
 
     func addSession() {

@@ -46,6 +46,8 @@ struct TBConfigurationDiagnosticSnapshot {
     var requiresReceiverAccessibility: Bool
     var receiverAccessibilityGranted: Bool?
     var colorDepth: TBColorDepthState = .pending
+    /// The Thunderbolt cable is connected but negotiated plain USB.
+    var thunderboltCableUSBOnly = false
 }
 
 enum TBConfigurationDiagnostics {
@@ -64,10 +66,16 @@ enum TBConfigurationDiagnostics {
 
     private static func localLinkCheck(_ snapshot: TBConfigurationDiagnosticSnapshot) -> TBConfigurationCheck {
         guard let interface = snapshot.localInterfaceName, !interface.isEmpty else {
-            // No 169.254 address on bridge0 means the Thunderbolt link is down.
-            let detail = snapshot.transportIsThunderbolt
-                ? "sender.diagnostics.thunderbolt_link_inactive"
-                : "sender.diagnostics.local_link_missing"
+            // No 169.254 address on bridge0 means the Thunderbolt link is down;
+            // a cable that came up as plain USB gets a more specific hint.
+            let detail: String
+            if !snapshot.transportIsThunderbolt {
+                detail = "sender.diagnostics.local_link_missing"
+            } else if snapshot.thunderboltCableUSBOnly {
+                detail = "sender.diagnostics.thunderbolt_link_usb_only"
+            } else {
+                detail = "sender.diagnostics.thunderbolt_link_inactive"
+            }
             return check("local_link", .attention, "sender.diagnostics.local_link", detail)
         }
         let isBridge = interface.lowercased().hasPrefix("bridge")

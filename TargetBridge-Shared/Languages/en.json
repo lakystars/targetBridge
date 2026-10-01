@@ -87,6 +87,7 @@
   "sender.diagnostics.local_link": "Local connection",
   "sender.diagnostics.local_link_missing": "Choose an active local interface before connecting.",
   "sender.diagnostics.thunderbolt_link_inactive": "No Thunderbolt Bridge address (169.254.x.x). Reconnect the cable and wait a few seconds; manual IPs on Thunderbolt Bridge are not used.",
+  "sender.diagnostics.thunderbolt_link_usb_only": "The cable is connected as USB, not Thunderbolt. Use a Thunderbolt 3/4 or USB4 cable and plug it in firmly, or try another port; if a Thunderbolt cable still shows USB, put this Mac to sleep and wake it, or restart it.",
   "sender.diagnostics.color_depth": "Color depth",
   "sender.diagnostics.color_depth_pending": "Shown once the stream starts.",
   "sender.diagnostics.color_depth_ten_bit": "10-bit color is active (HEVC Main10).",

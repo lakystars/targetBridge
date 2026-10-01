@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import IOKit
 import Network
 import os
 import SystemConfiguration
@@ -141,6 +142,86 @@ enum TBConnectionDiagnostics {
             return false
         }
         return first == 169 && second == 254
+    }
+
+    /// Active transports of one USB-C port as reported by the port controller
+    /// (e.g. "CC", "USB2", "USB3", "CIO" for Thunderbolt/USB4, "DisplayPort").
+    struct USBCPortState: Equatable {
+        let description: String
+        let connectionActive: Bool
+        let transports: [String]
+    }
+
+    /// Reads every USB-C port that publishes `TransportsActive`. Empty when the
+    /// controller does not expose it (older macOS or hardware).
+    static func usbCPortStates() -> [USBCPortState] {
+        let matching = ["IOPropertyExistsMatch": "TransportsActive"] as CFDictionary
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
+            return []
+        }
+        defer { IOObjectRelease(iterator) }
+        var states: [USBCPortState] = []
+        var service = IOIteratorNext(iterator)
+        while service != 0 {
+            defer {
+                IOObjectRelease(service)
+                service = IOIteratorNext(iterator)
+            }
+            func property(_ key: String) -> Any? {
+                IORegistryEntryCreateCFProperty(service, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue()
+            }
+            guard let description = property("PortDescription") as? String,
+                  description.hasPrefix("Port-USB-C") else { continue }
+            states.append(USBCPortState(
+                description: description,
+                connectionActive: (property("ConnectionActive") as? NSNumber)?.boolValue ?? false,
+                transports: property("TransportsActive") as? [String] ?? []
+            ))
+        }
+        return states
+    }
+
+    /// A Mac-to-Mac cable that came up as plain USB (USB-NCM link-local network,
+    /// no Thunderbolt tunnel) instead of Thunderbolt. The port controller can stay
+    /// in that state until sleep or restart.
+    /// - Parameters:
+    ///   - isUSBNCM: whether a BSD interface is a USB-NCM network device; keeps a
+    ///     Wi-Fi or Ethernet self-assigned 169.254 address from counting.
+    /// Unknown port state (no controller data) is never reported as a fallback.
+    static func thunderboltCableFellBackToUSB(ports: [USBCPortState],
+                                              interfaces: [LocalInterface],
+                                              isUSBNCM: (String) -> Bool = isUSBNCMInterface) -> Bool {
+        if interfaces.contains(where: { $0.name.hasPrefix("bridge") && isIPv4LinkLocal($0.ip) }) { return false }
+        guard !ports.isEmpty,
+              interfaces.contains(where: { isDirectLinkInterface(name: $0.name, ip: $0.ip) && isUSBNCM($0.name) })
+        else { return false }
+        return ports.contains { port in
+            port.connectionActive && !port.transports.contains("CIO") &&
+                (port.transports.contains("USB3") || port.transports.contains("USB2"))
+        }
+    }
+
+    /// True when the BSD network interface sits on a USB-NCM driver.
+    static func isUSBNCMInterface(_ bsdName: String) -> Bool {
+        guard let matching = IOBSDNameMatching(kIOMainPortDefault, 0, bsdName) else { return false }
+        var entry = IOServiceGetMatchingService(kIOMainPortDefault, matching)
+        var depth = 0
+        while entry != 0 && depth < 8 {
+            var className = [CChar](repeating: 0, count: 128)
+            IOObjectGetClass(entry, &className)
+            if String(cString: className).contains("NCM") {
+                IOObjectRelease(entry)
+                return true
+            }
+            var parent: io_registry_entry_t = 0
+            let status = IORegistryEntryGetParentEntry(entry, kIOServicePlane, &parent)
+            IOObjectRelease(entry)
+            entry = status == KERN_SUCCESS ? parent : 0
+            depth += 1
+        }
+        if entry != 0 { IOObjectRelease(entry) }
+        return false
     }
 
     static func isIPv4LinkLocal(_ ip: String) -> Bool {

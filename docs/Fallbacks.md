@@ -28,6 +28,11 @@ Automatic sender fallbacks:
   the sender reconnects once automatically.
 - If a remembered display mode no longer applies, the next best HiDPI mode is
   used and the remembered mode is cleared.
+- If the cable comes up as plain USB (a USB-NCM network link with no
+  Thunderbolt tunnel on the port), the configuration check says so. Use a
+  Thunderbolt 3/4 or USB4 cable; if a Thunderbolt cable still shows USB, the
+  port controller can stay in USB mode until the Mac sleeps and wakes or
+  restarts.
 
 Receiver (idle screen keys)
 ---------------------------

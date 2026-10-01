@@ -87,6 +87,7 @@
   "sender.diagnostics.local_link": "로컬 연결",
   "sender.diagnostics.local_link_missing": "연결하기 전에 활성 로컬 인터페이스를 선택하세요.",
   "sender.diagnostics.thunderbolt_link_inactive": "Thunderbolt Bridge 주소(169.254.x.x)가 없습니다. 케이블을 다시 연결하고 몇 초 기다리세요. Thunderbolt Bridge에 수동으로 지정한 IP는 사용되지 않습니다.",
+  "sender.diagnostics.thunderbolt_link_usb_only": "케이블이 Thunderbolt가 아닌 USB로 연결되었습니다. Thunderbolt 3/4 또는 USB4 케이블을 단단히 꽂거나 다른 포트를 사용해 보세요. Thunderbolt 케이블인데도 USB로 잡히면 이 Mac을 잠자기 후 깨우거나 재시동하세요.",
   "sender.diagnostics.color_depth": "색 깊이",
   "sender.diagnostics.color_depth_pending": "스트림이 시작되면 표시됩니다.",
   "sender.diagnostics.color_depth_ten_bit": "10비트 색상이 사용 중입니다 (HEVC Main10).",

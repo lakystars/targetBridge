@@ -47,6 +47,41 @@ final class TBConnectionDiagnosticsTests: XCTestCase {
         XCTAssertFalse(TBConnectionDiagnostics.isDirectLinkInterface(name: "en8", ip: "169.254.1"))
     }
 
+    // MARK: - Thunderbolt cable negotiated as USB
+
+    private let usbLink = [TBConnectionDiagnostics.LocalInterface(name: "en5", ip: "169.254.217.179")]
+    private let usbOnlyPort = [TBConnectionDiagnostics.USBCPortState(description: "Port-USB-C@3", connectionActive: true,
+                                                                    transports: ["CC", "USB2", "USB3"])]
+
+    func testUSBOnlyPortWithDirectUSBLinkMeansCableFellBackToUSB() {
+        XCTAssertTrue(TBConnectionDiagnostics.thunderboltCableFellBackToUSB(
+            ports: usbOnlyPort, interfaces: usbLink, isUSBNCM: { _ in true }))
+    }
+
+    func testThunderboltPortIsNotAFallback() {
+        let ports = [TBConnectionDiagnostics.USBCPortState(description: "Port-USB-C@3", connectionActive: true,
+                                                          transports: ["CC", "CIO"])]
+        XCTAssertFalse(TBConnectionDiagnostics.thunderboltCableFellBackToUSB(
+            ports: ports, interfaces: usbLink, isUSBNCM: { _ in true }))
+    }
+
+    func testSelfAssignedWiFiAddressIsNotAUSBLink() {
+        let wifi = [TBConnectionDiagnostics.LocalInterface(name: "en0", ip: "169.254.10.20")]
+        XCTAssertFalse(TBConnectionDiagnostics.thunderboltCableFellBackToUSB(
+            ports: usbOnlyPort, interfaces: wifi, isUSBNCM: { _ in false }))
+    }
+
+    func testUnknownPortStateIsNotReportedAsFallback() {
+        XCTAssertFalse(TBConnectionDiagnostics.thunderboltCableFellBackToUSB(
+            ports: [], interfaces: usbLink, isUSBNCM: { _ in true }))
+    }
+
+    func testWorkingThunderboltBridgeIsNotAFallback() {
+        let interfaces = usbLink + [TBConnectionDiagnostics.LocalInterface(name: "bridge0", ip: "169.254.13.180")]
+        XCTAssertFalse(TBConnectionDiagnostics.thunderboltCableFellBackToUSB(
+            ports: usbOnlyPort, interfaces: interfaces, isUSBNCM: { _ in true }))
+    }
+
     // MARK: - scopedReceiverHost
 
     /// The Thunderbolt Bridge case: both ends self-assign 169.254.x, the

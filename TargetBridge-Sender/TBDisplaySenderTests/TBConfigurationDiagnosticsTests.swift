@@ -22,6 +22,14 @@ final class TBConfigurationDiagnosticsTests: XCTestCase {
         XCTAssertEqual(check?.detailKey, "sender.diagnostics.thunderbolt_link_inactive")
     }
 
+    func testThunderboltCableOnUSBGetsItsOwnHint() {
+        var snapshot = baseSnapshot(localInterfaceName: nil)
+        snapshot.thunderboltCableUSBOnly = true
+        let check = TBConfigurationDiagnostics.checks(for: snapshot).first(where: { $0.id == "local_link" })
+        XCTAssertEqual(check?.state, .attention)
+        XCTAssertEqual(check?.detailKey, "sender.diagnostics.thunderbolt_link_usb_only")
+    }
+
     func testNetworkTransportAsksForInterfaceWhenNoneSelected() {
         var snapshot = baseSnapshot(localInterfaceName: nil)
         snapshot.transportIsThunderbolt = false
