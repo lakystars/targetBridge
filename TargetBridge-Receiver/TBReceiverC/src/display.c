@@ -388,9 +388,11 @@ static void tb_disp_rebuild_status_texture(struct tb_display *d,
 
     const char *current_language = tb_i18n_current_language();
     const int zh = current_language && strncmp(current_language, "zh", 2) == 0;
-    const char *title_font = zh ? "PingFangSC-Semibold" : "Helvetica-Bold";
-    const char *body_font = zh ? "PingFangSC-Regular" : "Helvetica";
-    const char *section_font = zh ? "PingFangSC-Semibold" : "Helvetica-Bold";
+    const int ko = current_language && strncmp(current_language, "ko", 2) == 0;
+    const int cjk = zh || ko;
+    const char *title_font = zh ? "PingFangSC-Semibold" : ko ? "AppleSDGothicNeo-SemiBold" : "Helvetica-Bold";
+    const char *body_font = zh ? "PingFangSC-Regular" : ko ? "AppleSDGothicNeo-Regular" : "Helvetica";
+    const char *section_font = zh ? "PingFangSC-Semibold" : ko ? "AppleSDGothicNeo-SemiBold" : "Helvetica-Bold";
     const char *mono_font = "Menlo";
     const char *mono_bold_font = "Menlo-Bold";
 
@@ -458,9 +460,9 @@ static void tb_disp_rebuild_status_texture(struct tb_display *d,
 
     const CGFloat display_x = outer_x + card_w + card_gap + 20.0;
     tb_disp_draw_text(ctx, tb_i18n_get("receiver.ui.display"), section_font, 15, display_x, info_top - 34.0, 0.54, 0.62, 0.76);
-    tb_disp_draw_text(ctx, panel, zh ? body_font : mono_font, 20, display_x, info_top - 68.0, 0.94, 0.96, 0.99);
+    tb_disp_draw_text(ctx, panel, cjk ? body_font : mono_font, 20, display_x, info_top - 68.0, 0.94, 0.96, 0.99);
     tb_disp_draw_text(ctx, tb_i18n_get("receiver.ui.stream_profile"), section_font, 14, display_x, info_top - 118.0, 0.54, 0.62, 0.76);
-    tb_disp_draw_text(ctx, mode, zh ? body_font : mono_font, 20, display_x, info_top - 148.0, 0.94, 0.96, 0.99);
+    tb_disp_draw_text(ctx, mode, cjk ? body_font : mono_font, 20, display_x, info_top - 148.0, 0.94, 0.96, 0.99);
 
     const CGFloat footer_top = info_top - info_h - 28.0;
     const CGFloat footer_h = 150.0;

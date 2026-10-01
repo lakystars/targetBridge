@@ -235,7 +235,8 @@ static int tb_receiver_is_valid_language_pref(const char *language_pref) {
             strcmp(language_pref, "en") == 0 ||
             strcmp(language_pref, "de") == 0 ||
             strcmp(language_pref, "fr") == 0 ||
-            strcmp(language_pref, "zh") == 0);
+            strcmp(language_pref, "zh") == 0 ||
+            strcmp(language_pref, "ko") == 0);
 }
 
 static void tb_receiver_settings_path(char *dest, size_t size) {
@@ -313,6 +314,7 @@ static const char *tb_receiver_language_display_name(const char *language_code) 
     if (strcmp(language_code, "de") == 0) return tb_i18n_get("common.language.german");
     if (strcmp(language_code, "fr") == 0) return tb_i18n_get("common.language.french");
     if (strcmp(language_code, "zh") == 0) return tb_i18n_get("common.language.chinese");
+    if (strcmp(language_code, "ko") == 0) return tb_i18n_get("common.language.korean");
     return tb_i18n_get("common.language.english");
 }
 
@@ -366,6 +368,14 @@ static void tb_receiver_refresh_permissions_text(struct app *a) {
             "输入监控：%s   辅助功能：%s",
             input_monitoring ? "正常" : "缺失",
             accessibility ? "正常" : "缺失"
+        );
+    } else if (lang && strncmp(lang, "ko", 2) == 0) {
+        snprintf(
+            a->permissions_text,
+            sizeof(a->permissions_text),
+            "입력 모니터링: %s   손쉬운 사용: %s",
+            input_monitoring ? "정상" : "없음",
+            accessibility ? "정상" : "없음"
         );
     } else {
         snprintf(
@@ -442,6 +452,8 @@ static void tb_receiver_cycle_language_preference(struct app *a) {
         snprintf(a->language_pref, sizeof(a->language_pref), "%s", "fr");
     } else if (strcmp(a->language_pref, "fr") == 0) {
         snprintf(a->language_pref, sizeof(a->language_pref), "%s", "zh");
+    } else if (strcmp(a->language_pref, "zh") == 0) {
+        snprintf(a->language_pref, sizeof(a->language_pref), "%s", "ko");
     } else {
         snprintf(a->language_pref, sizeof(a->language_pref), "%s", "auto");
     }

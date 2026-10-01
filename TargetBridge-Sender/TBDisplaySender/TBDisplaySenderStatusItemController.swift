@@ -297,6 +297,7 @@ final class TBDisplaySenderStatusItemController: NSObject {
         case .english: return "Brightness"
         case .german: return "Helligkeit"
         case .chinese: return "亮度"
+        case .korean: return "밝기"
         }
     }
 
@@ -306,6 +307,7 @@ final class TBDisplaySenderStatusItemController: NSObject {
         case .english: return "On"
         case .german: return "Ein"
         case .chinese: return "开"
+        case .korean: return "켬"
         case .french: return "Activé"
         }
     }
@@ -316,6 +318,7 @@ final class TBDisplaySenderStatusItemController: NSObject {
         case .english: return "Off"
         case .german: return "Aus"
         case .chinese: return "关"
+        case .korean: return "끔"
         case .french: return "Désactivé"
         }
     }
@@ -326,6 +329,7 @@ final class TBDisplaySenderStatusItemController: NSObject {
         case .english: return "Night Shift"
         case .german: return "Night Shift"
         case .chinese: return "夜览"
+        case .korean: return "Night Shift"
         case .french: return "Night Shift"
         }
     }
@@ -336,6 +340,7 @@ final class TBDisplaySenderStatusItemController: NSObject {
         case .english: return "True Tone"
         case .german: return "True Tone"
         case .chinese: return "原彩显示"
+        case .korean: return "True Tone"
         case .french: return "True Tone"
         }
     }
@@ -347,6 +352,7 @@ final class TBDisplaySenderStatusItemController: NSObject {
         case .english: return "Volume"
         case .german: return "Lautstärke"
         case .chinese: return "音量"
+        case .korean: return "음량"
         }
     }
 
@@ -357,6 +363,7 @@ final class TBDisplaySenderStatusItemController: NSObject {
         case .english: return "Connection info"
         case .german: return "Verbindungsinfo"
         case .chinese: return "连接信息"
+        case .korean: return "연결 정보"
         }
     }
 

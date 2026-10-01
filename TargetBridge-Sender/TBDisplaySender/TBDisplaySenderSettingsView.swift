@@ -279,6 +279,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "TargetBridge-Einstellungen"
         case .french: return "Réglages TargetBridge"
         case .chinese: return "TargetBridge 设置"
+        case .korean: return "TargetBridge 설정"
         }
     }
 
@@ -289,6 +290,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Globale App-Einstellungen getrennt vom operativen Dashboard."
         case .french: return "Préférences globales de l’app séparées du tableau de bord opérationnel."
         case .chinese: return "全局应用偏好设置与主操作面板分离。"
+        case .korean: return "운영 대시보드와 분리된 전역 앱 환경설정입니다."
         }
     }
 
@@ -299,6 +301,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Allgemein"
         case .french: return "Général"
         case .chinese: return "通用"
+        case .korean: return "일반"
         }
     }
 
@@ -309,6 +312,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Oberfläche"
         case .french: return "Interface"
         case .chinese: return "界面"
+        case .korean: return "인터페이스"
         }
     }
 
@@ -319,6 +323,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Verhalten"
         case .french: return "Comportement"
         case .chinese: return "行为"
+        case .korean: return "동작"
         }
     }
 
@@ -329,6 +334,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Info"
         case .french: return "À propos"
         case .chinese: return "关于"
+        case .korean: return "정보"
         }
     }
 
@@ -339,6 +345,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "TargetBridge ist ein Open-Source-Werkzeug, um Intel-iMac-Panels als externe Displays für moderne Macs weiterzuverwenden. Globale Einstellungen sind hier; operative Sitzungsoptionen sind im Hauptfenster."
         case .french: return "TargetBridge est un utilitaire open source qui permet de réutiliser les dalles d’iMac Intel comme écrans externes pour les Mac modernes. Les préférences globales se trouvent ici ; les réglages de chaque session restent dans la fenêtre principale."
         case .chinese: return "TargetBridge 是一个开源工具，可将 Intel iMac 面板重新用作现代 Mac 的外接显示器。全局偏好设置在这里管理；每个会话的操作设置保留在主窗口中。"
+        case .korean: return "TargetBridge는 Intel iMac 패널을 최신 Mac의 외장 디스플레이로 재사용하기 위한 오픈 소스 유틸리티입니다. 전역 환경설정은 여기에서, 세션별 운영 설정은 메인 윈도우에서 관리합니다."
         }
     }
 
@@ -349,6 +356,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "GitHub"
         case .french: return "GitHub"
         case .chinese: return "GitHub"
+        case .korean: return "GitHub"
         }
     }
 
@@ -359,6 +367,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Letztes Release"
         case .french: return "Dernière version"
         case .chinese: return "最新发布"
+        case .korean: return "최신 릴리스"
         }
     }
 
@@ -369,6 +378,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Version"
         case .french: return "Version"
         case .chinese: return "版本"
+        case .korean: return "버전"
         }
     }
 
@@ -379,6 +389,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Add-ons"
         case .french: return "Extensions"
         case .chinese: return "附加组件"
+        case .korean: return "애드온"
         }
     }
 
@@ -389,6 +400,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Add-ons werden aus sicheren JSON-Manifests geladen. Offizielle Add-ons sind in der App enthalten, benutzerdefinierte können in den Benutzer-Addons-Ordner importiert werden."
         case .french: return "Les extensions sont chargées depuis des manifestes JSON sûrs. Les extensions officielles sont incluses dans l’app ; les extensions personnalisées peuvent être importées dans le dossier utilisateur Addons."
         case .chinese: return "附加组件通过安全的 JSON 清单加载。官方附加组件随应用提供，自定义附加组件可导入到用户 Addons 文件夹。"
+        case .korean: return "애드온은 안전한 JSON 매니페스트에서 로드됩니다. 공식 애드온은 앱에 포함되어 있으며, 사용자 정의 애드온은 사용자 Addons 폴더로 가져올 수 있습니다."
         }
     }
 
@@ -399,6 +411,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Add-on importieren..."
         case .french: return "Importer une extension..."
         case .chinese: return "导入附加组件..."
+        case .korean: return "애드온 가져오기..."
         }
     }
 
@@ -409,6 +422,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Neu laden"
         case .french: return "Recharger"
         case .chinese: return "重新加载"
+        case .korean: return "다시 로드"
         }
     }
 
@@ -419,6 +433,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Add-ons-Ordner öffnen"
         case .french: return "Ouvrir le dossier Addons"
         case .chinese: return "打开 Addons 文件夹"
+        case .korean: return "Addons 폴더 열기"
         }
     }
 
@@ -429,6 +444,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Keine Add-ons gefunden. Importiere ein JSON-Manifest oder nutze die eingebauten offiziellen Add-ons."
         case .french: return "Aucune extension trouvée. Importez un manifeste JSON ou utilisez les extensions officielles incluses."
         case .chinese: return "未找到附加组件。请导入 JSON 清单或使用内置官方附加组件。"
+        case .korean: return "애드온이 없습니다. JSON 매니페스트를 가져오거나 기본 제공 공식 애드온을 사용하세요."
         }
     }
 
@@ -439,6 +455,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Beende alle Sitzungen, bevor du ein Add-on aktivierst oder deaktivierst."
         case .french: return "Arrêtez toutes les sessions avant d’activer ou de désactiver une extension."
         case .chinese: return "请先停止所有会话，再启用或禁用附加组件。"
+        case .korean: return "애드온을 활성화하거나 비활성화하기 전에 모든 세션을 중지하세요."
         }
     }
 
@@ -449,6 +466,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Aktiv"
         case .french: return "Activée"
         case .chinese: return "已启用"
+        case .korean: return "활성화됨"
         }
     }
 
@@ -459,6 +477,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Deaktiviert"
         case .french: return "Désactivée"
         case .chinese: return "已禁用"
+        case .korean: return "비활성화됨"
         }
     }
 
@@ -469,6 +488,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Experimentell"
         case .french: return "Expérimentale"
         case .chinese: return "实验性"
+        case .korean: return "실험적"
         }
     }
 
@@ -479,6 +499,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Inkompatibel"
         case .french: return "Incompatible"
         case .chinese: return "不兼容"
+        case .korean: return "호환되지 않음"
         }
     }
 
@@ -489,6 +510,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Fähigkeiten"
         case .french: return "Fonctionnalités"
         case .chinese: return "能力"
+        case .korean: return "기능"
         }
     }
 
@@ -499,6 +521,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Add-on-Import fehlgeschlagen"
         case .french: return "Échec de l’importation de l’extension"
         case .chinese: return "导入附加组件失败"
+        case .korean: return "애드온 가져오기 실패"
         }
     }
 
@@ -509,6 +532,7 @@ struct TBDisplaySenderSettingsView: View {
         case .german: return "Wähle eine JSON-Manifestdatei für das Add-on."
         case .french: return "Choisissez un fichier manifeste JSON pour l’extension."
         case .chinese: return "请选择附加组件的 JSON 清单文件。"
+        case .korean: return "애드온의 JSON 매니페스트 파일을 선택하세요."
         }
     }
 
@@ -519,11 +543,13 @@ struct TBDisplaySenderSettingsView: View {
         case (.bundled, .german): return "Mitgeliefert"
         case (.bundled, .french): return "Incluse"
         case (.bundled, .chinese): return "内置"
+        case (.bundled, .korean): return "기본 제공"
         case (.user, .italian): return "Utente"
         case (.user, .english): return "User"
         case (.user, .german): return "Benutzer"
         case (.user, .french): return "Utilisateur"
         case (.user, .chinese): return "用户"
+        case (.user, .korean): return "사용자"
         }
     }
 
@@ -534,16 +560,19 @@ struct TBDisplaySenderSettingsView: View {
         case (.networkLink, .german): return "Network Link"
         case (.networkLink, .french): return "Network Link"
         case (.networkLink, .chinese): return "网络链路"
+        case (.networkLink, .korean): return "Network Link"
         case (.audioRelay, .italian): return "Audio Relay"
         case (.audioRelay, .english): return "Audio Relay"
         case (.audioRelay, .german): return "Audio Relay"
         case (.audioRelay, .french): return "Relais audio"
         case (.audioRelay, .chinese): return "音频转发"
+        case (.audioRelay, .korean): return "Audio Relay"
         case (.inputDockstation, .italian): return "Input Dockstation"
         case (.inputDockstation, .english): return "Input Dockstation"
         case (.inputDockstation, .german): return "Input Dockstation"
         case (.inputDockstation, .french): return "Station d’accueil des entrées"
         case (.inputDockstation, .chinese): return "输入扩展坞"
+        case (.inputDockstation, .korean): return "Input Dockstation"
         }
     }
 }

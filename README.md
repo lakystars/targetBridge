@@ -91,7 +91,7 @@ It also keeps the established multi-Mac workspace features:
 - Receiver device controls (brightness, volume, Night Shift, True Tone): [docs/Features.md#receiver-device-controls](docs/Features.md#receiver-device-controls)
 - Remote connection & automation (URL scheme, launch args, SSH, login/wake): [docs/Automation.md](docs/Automation.md)
 - Measured connection-path selection (Thunderbolt, USB/USB4, Ethernet, Wi-Fi): [docs/Automation.md#1-targetbridge-cli](docs/Automation.md#1-targetbridge-cli)
-- Shared translations (English, Italian, German, French, and Chinese): [docs/Features.md#shared-translations](docs/Features.md#shared-translations)
+- Shared translations (English, Italian, German, French, Chinese, and Korean): [docs/Features.md#shared-translations](docs/Features.md#shared-translations)
 - Thunderbolt networking extras (SSH/SFTP, file sharing, Internet Sharing): [docs/Features.md#thunderbolt-networking-extras](docs/Features.md#thunderbolt-networking-extras)
 
 ## Core Features

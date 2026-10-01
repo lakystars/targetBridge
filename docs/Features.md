@@ -146,7 +146,7 @@ Receiver applies it locally.
 
 Sender and Receiver now use shared JSON language files stored in the repository.
 
-The interface is available in English, Italian, German, French, and Chinese.
+The interface is available in English, Italian, German, French, Chinese, and Korean.
 
 This makes it much easier to:
 

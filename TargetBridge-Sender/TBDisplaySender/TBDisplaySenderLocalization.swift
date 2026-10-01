@@ -6,6 +6,7 @@ enum TBDisplaySenderLanguage: String, CaseIterable, Identifiable {
     case german
     case french
     case chinese
+    case korean
 
     static let defaultsKey = "fd.tbdisplaysender.language"
 
@@ -18,6 +19,7 @@ enum TBDisplaySenderLanguage: String, CaseIterable, Identifiable {
         case .german: return "Deutsch"
         case .french: return "Français"
         case .chinese: return "中文"
+        case .korean: return "한국어"
         }
     }
 
@@ -28,6 +30,7 @@ enum TBDisplaySenderLanguage: String, CaseIterable, Identifiable {
         case .german: return "de"
         case .french: return "fr"
         case .chinese: return "zh"
+        case .korean: return "ko"
         }
     }
 
@@ -174,6 +177,7 @@ enum TBDisplaySenderL10n {
         case .german: return "Transport"
         case .french: return "Transport"
         case .chinese: return "传输"
+        case .korean: return "전송 방식"
         }
     }
 
@@ -184,6 +188,7 @@ enum TBDisplaySenderL10n {
         case .german: return "Lokale Interface-IP"
         case .french: return "IP de l’interface locale"
         case .chinese: return "本地接口 IP"
+        case .korean: return "로컬 인터페이스 IP"
         }
     }
 
@@ -194,6 +199,7 @@ enum TBDisplaySenderL10n {
         case .german: return "Verfügbare lokale Schnittstellen"
         case .french: return "Interfaces locales disponibles"
         case .chinese: return "可用本地接口"
+        case .korean: return "사용 가능한 로컬 인터페이스"
         }
     }
 
@@ -359,6 +365,7 @@ enum TBDisplaySenderL10n {
         case .german: return "Einstellungen anzeigen"
         case .french: return "Afficher les réglages"
         case .chinese: return "显示设置"
+        case .korean: return "설정 보기"
         }
     }
 
@@ -369,6 +376,7 @@ enum TBDisplaySenderL10n {
         case .german: return "Einstellungen ausblenden"
         case .french: return "Masquer les réglages"
         case .chinese: return "隐藏设置"
+        case .korean: return "설정 숨기기"
         }
     }
 
@@ -379,6 +387,7 @@ enum TBDisplaySenderL10n {
         case .german: return "Lass die täglichen Steuerelemente sichtbar und öffne diesen Bereich nur, wenn du die App neu konfigurieren musst."
         case .french: return "Gardez les commandes quotidiennes visibles et ouvrez cette section seulement lorsque vous devez reconfigurer l’app."
         case .chinese: return "让日常控制保持可见，只在需要重新配置应用时再打开这里。"
+        case .korean: return "일상적인 컨트롤만 표시해 두고, 앱을 다시 구성해야 할 때만 이 섹션을 여세요."
         }
     }
 
@@ -417,6 +426,7 @@ enum TBDisplaySenderL10n {
         case .german: return "Virtuelle Display-Ereignisse in Konsole protokollieren (ausführlich)"
         case .french: return "Enregistrer les événements d’écran virtuel dans Console (détaillé)"
         case .chinese: return "将虚拟显示事件详细记录到 Console"
+        case .korean: return "가상 디스플레이 이벤트를 콘솔에 기록(상세)"
         }
     }
 

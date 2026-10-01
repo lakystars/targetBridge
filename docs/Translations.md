@@ -11,6 +11,7 @@ All shared language files are in:
 - `TargetBridge-Shared/Languages/de.json`
 - `TargetBridge-Shared/Languages/fr.json`
 - `TargetBridge-Shared/Languages/zh.json`
+- `TargetBridge-Shared/Languages/ko.json`
 
 The Sender and Receiver both read from these files.
 
@@ -73,8 +74,8 @@ Do not translate or remove the placeholder tokens themselves. Only translate the
 - Do not rename keys.
 - Do not remove placeholders.
 - Try to keep the same meaning across all languages.
-- If you add a new key in `en.json`, also add it to `it.json`, `de.json`, `fr.json`, and `zh.json`.
-- A feature is not complete until its visible text is reviewed in English, Italian, German, French, and Chinese.
+- If you add a new key in `en.json`, also add it to `it.json`, `de.json`, `fr.json`, `zh.json`, and `ko.json`.
+- A feature is not complete until its visible text is reviewed in English, Italian, German, French, Chinese, and Korean.
 
 ## Adding a new language
 

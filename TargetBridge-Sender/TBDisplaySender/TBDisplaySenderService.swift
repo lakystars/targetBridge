@@ -1493,7 +1493,8 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             || captureDisplayText == TBDisplaySenderL10n.captureDisplayNotAvailable(.english)
             || captureDisplayText == TBDisplaySenderL10n.captureDisplayNotAvailable(.german)
             || captureDisplayText == TBDisplaySenderL10n.captureDisplayNotAvailable(.french)
-            || captureDisplayText == TBDisplaySenderL10n.captureDisplayNotAvailable(.chinese) {
+            || captureDisplayText == TBDisplaySenderL10n.captureDisplayNotAvailable(.chinese)
+            || captureDisplayText == TBDisplaySenderL10n.captureDisplayNotAvailable(.korean) {
             captureDisplayText = TBDisplaySenderL10n.captureDisplayNotAvailable(language)
         }
 
@@ -1502,7 +1503,8 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             || displayStateText == TBDisplaySenderL10n.displayStateNotAvailable(.english)
             || displayStateText == TBDisplaySenderL10n.displayStateNotAvailable(.german)
             || displayStateText == TBDisplaySenderL10n.displayStateNotAvailable(.french)
-            || displayStateText == TBDisplaySenderL10n.displayStateNotAvailable(.chinese) {
+            || displayStateText == TBDisplaySenderL10n.displayStateNotAvailable(.chinese)
+            || displayStateText == TBDisplaySenderL10n.displayStateNotAvailable(.korean) {
             displayStateText = TBDisplaySenderL10n.displayStateNotAvailable(language)
         }
     }
@@ -3624,6 +3626,7 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
                 case .german: timeoutMessage = "Verbindungs-Zeitüberschreitung"
                 case .french: timeoutMessage = "Délai de connexion dépassé"
                 case .chinese: timeoutMessage = "连接超时"
+                case .korean: timeoutMessage = "연결 시간 초과"
                 }
 
                 // Attach where we dialed, from which interface, and the last

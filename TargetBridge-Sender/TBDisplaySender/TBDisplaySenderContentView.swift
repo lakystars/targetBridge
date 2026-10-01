@@ -167,6 +167,7 @@ struct TBDisplaySenderContentView: View {
         case .german: return "Einstellungen"
         case .french: return "Réglages"
         case .chinese: return "设置"
+        case .korean: return "설정"
         }
     }
 
@@ -177,6 +178,7 @@ struct TBDisplaySenderContentView: View {
         case .german: return "Info"
         case .french: return "À propos"
         case .chinese: return "关于"
+        case .korean: return "정보"
         }
     }
 }
@@ -414,6 +416,7 @@ private struct TBDisplaySenderSessionCard: View {
         case .german: return "Transport"
         case .french: return "Transport"
         case .chinese: return "传输"
+        case .korean: return "전송 방식"
         }
     }
 
@@ -424,6 +427,7 @@ private struct TBDisplaySenderSessionCard: View {
         case .german: return "Empfänger"
         case .french: return "Receiver"
         case .chinese: return "接收端"
+        case .korean: return "Receiver"
         }
     }
 
@@ -434,6 +438,7 @@ private struct TBDisplaySenderSessionCard: View {
         case .german: return "Modus"
         case .french: return "Mode"
         case .chinese: return "模式"
+        case .korean: return "모드"
         }
     }
 
@@ -444,6 +449,7 @@ private struct TBDisplaySenderSessionCard: View {
         case .german: return "Telemetrie"
         case .french: return "Télémétrie"
         case .chinese: return "遥测"
+        case .korean: return "텔레메트리"
         }
     }
 
@@ -454,6 +460,7 @@ private struct TBDisplaySenderSessionCard: View {
         case .german: return "Helligkeit"
         case .french: return "Luminosité"
         case .chinese: return "亮度"
+        case .korean: return "밝기"
         }
     }
 
@@ -464,6 +471,7 @@ private struct TBDisplaySenderSessionCard: View {
         case .german: return "Lautstärke"
         case .french: return "Volume"
         case .chinese: return "音量"
+        case .korean: return "음량"
         }
     }
 
@@ -474,6 +482,7 @@ private struct TBDisplaySenderSessionCard: View {
         case .german: return "Frames werden gesendet"
         case .french: return "Images en cours d’envoi"
         case .chinese: return "正在发送画面帧"
+        case .korean: return "프레임 전송 중"
         }
     }
 
@@ -484,6 +493,7 @@ private struct TBDisplaySenderSessionCard: View {
         case .german: return "Kein aktiver Stream"
         case .french: return "Aucun flux actif"
         case .chinese: return "当前没有活动流"
+        case .korean: return "활성 스트림 없음"
         }
     }
 
@@ -494,6 +504,7 @@ private struct TBDisplaySenderSessionCard: View {
         case .german: return "Monitor-Sitzung"
         case .french: return "Moniteur de session"
         case .chinese: return "显示会话"
+        case .korean: return "모니터 세션"
         }
     }
 
@@ -939,6 +950,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Transport, Ausgabe und Diagnose konfigurieren, ohne das Haupt-Dashboard zu überladen."
         case .french: return "Configurez le transport, la sortie et le diagnostic sans encombrer le tableau de bord principal."
         case .chinese: return "在不干扰主控制面板的情况下配置传输、输出和诊断。"
+        case .korean: return "메인 대시보드를 복잡하게 만들지 않고 전송 방식, 출력, 진단을 설정합니다."
         }
     }
 
@@ -949,6 +961,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Verbindung"
         case .french: return "Connexion"
         case .chinese: return "连接"
+        case .korean: return "연결"
         }
     }
 
@@ -959,6 +972,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Ausgabe"
         case .french: return "Sortie"
         case .chinese: return "输出"
+        case .korean: return "출력"
         }
     }
 
@@ -969,6 +983,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Diagnose"
         case .french: return "Diagnostic"
         case .chinese: return "诊断"
+        case .korean: return "진단"
         }
     }
 
@@ -979,6 +994,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Wähle den Netzwerkpfad für diese Sitzung. Thunderbolt Bridge bleibt die empfohlene Option; Network Link ist experimentell."
         case .french: return "Choisissez le chemin réseau de cette session. Thunderbolt Bridge reste le profil recommandé ; Network Link est expérimental."
         case .chinese: return "为该会话选择网络路径。Thunderbolt Bridge 仍然是推荐模式；Network Link 为实验性功能。"
+        case .korean: return "이 세션의 네트워크 경로를 선택하세요. Thunderbolt Bridge를 권장하며, Network Link는 실험적 기능입니다."
         }
     }
 
@@ -989,6 +1005,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Die lokale Schnittstelle bestimmt, an welche Quelladresse der Sender beim Verbindungsaufbau bindet."
         case .french: return "L’interface locale détermine l’adresse source à laquelle le sender se lie avant d’ouvrir la connexion."
         case .chinese: return "本地接口决定 sender 在建立连接前绑定的源地址。"
+        case .korean: return "로컬 인터페이스는 연결을 열기 전에 Sender가 바인딩할 소스 주소를 결정합니다."
         }
     }
 
@@ -999,6 +1016,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Wähle einen automatisch gefundenen Empfänger oder bleibe bei der manuellen Eingabe."
         case .french: return "Sélectionnez un receiver détecté automatiquement ou conservez la saisie manuelle."
         case .chinese: return "选择自动发现的 receiver，或者保持手动输入。"
+        case .korean: return "자동으로 발견된 Receiver를 선택하거나 직접 입력하세요."
         }
     }
 
@@ -1009,6 +1027,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Direkte Empfängeradresse. Je nach gewähltem Transport kann eine Thunderbolt- oder LAN-IP verwendet werden."
         case .french: return "Adresse directe du receiver. Vous pouvez utiliser une IP Thunderbolt ou LAN selon le transport sélectionné."
         case .chinese: return "receiver 的直连地址。可以根据所选传输使用 Thunderbolt 或局域网 IP。"
+        case .korean: return "Receiver의 직접 주소입니다. 선택한 전송 방식에 따라 Thunderbolt 또는 LAN IP를 사용할 수 있습니다."
         }
     }
 
@@ -1019,6 +1038,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Mirror dupliziert den Desktop, Extended erstellt ein separates Display."
         case .french: return "Dupliquer recopie le bureau, Étendu crée un écran distinct."
         case .chinese: return "Mirror 复制桌面，Extended 创建独立显示器。"
+        case .korean: return "Mirror는 데스크톱을 복제하고, Extended는 별도의 디스플레이를 만듭니다."
         }
     }
 
@@ -1029,6 +1049,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Beginne bei WLAN oder langsameren Verbindungen mit konservativen Profilen und wähle höhere Einstellungen, wenn die Verbindung stabil bleibt."
         case .french: return "Commencez avec des préréglages prudents sur Wi-Fi ou les liaisons lentes, puis augmentez-les si la stabilité reste bonne."
         case .chinese: return "在 Wi‑Fi 或较慢链路上先使用保守预设，稳定后再逐步提高。"
+        case .korean: return "Wi‑Fi나 느린 링크에서는 보수적인 프리셋으로 시작하고, 안정적이면 단계적으로 올리세요."
         }
     }
 
@@ -1039,6 +1060,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Überträgt für diese Sitzung auch den Systemton des Senders an den Empfänger."
         case .french: return "Envoie aussi l’audio système du sender au receiver pour cette session."
         case .chinese: return "同时将 sender 的系统音频传到此会话的 receiver。"
+        case .korean: return "이 세션에서 Sender의 시스템 오디오도 Receiver로 전송합니다."
         }
     }
 
@@ -1049,6 +1071,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Rendern in Stream-Auflösung"
         case .french: return "Adapter le rendu au flux"
         case .chinese: return "渲染匹配串流分辨率"
+        case .korean: return "렌더링 해상도를 스트림에 맞춤"
         }
     }
 
@@ -1060,6 +1083,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Passt das virtuelle Display an das Stream-Profil an, sodass die Aufnahme 1:1 erfolgt. Der Desktop erscheint als \(desktop) HiDPI."
         case .french: return "Dimensionne l’écran virtuel selon le profil de flux pour une capture 1:1, sans redimensionnement avant l’encodage. Le bureau apparaît en \(desktop) HiDPI."
         case .chinese: return "使虚拟显示器匹配串流分辨率，捕获无需缩放。桌面显示为 \(desktop) HiDPI。"
+        case .korean: return "가상 디스플레이 크기를 스트림 프로필에 맞춰 1:1로 캡처하므로 인코딩 전 리스케일이 없습니다. 데스크톱은 \(desktop) HiDPI로 표시됩니다."
         }
     }
 
@@ -1070,6 +1094,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Input Dockstation"
         case .french: return "Station d’accueil des entrées"
         case .chinese: return "输入扩展坞"
+        case .korean: return "Input Dockstation"
         }
     }
 
@@ -1080,6 +1105,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Legt die Eingaberolle für diese Sitzung fest. Nur eine Sitzung kann gleichzeitig einen aktiven Master haben: Dieser Mac kann den Empfänger steuern oder der Empfänger kann diesen Mac steuern. Mit Ctrl+Option+Command+K beendest du die Steuerung schnell."
         case .french: return "Définit le rôle d’entrée de cette session. Une seule session peut avoir un master actif à la fois : ce Mac peut contrôler le receiver, ou le receiver peut contrôler ce Mac. Utilisez Contrôle+Option+Commande+K pour quitter rapidement le contrôle."
         case .chinese: return "定义此会话的输入角色。同一时间只能有一个活动 master：这台 Mac 可以控制 receiver，或者 receiver 可以控制这台 Mac。按下 Control+Option+Command+K 可以快速退出控制。"
+        case .korean: return "이 세션의 입력 역할을 지정합니다. 한 번에 하나의 세션만 활성 Master를 가질 수 있으며, 이 Mac이 Receiver를 제어하거나 Receiver가 이 Mac을 제어할 수 있습니다. Control+Option+Command+K를 누르면 제어를 빠르게 종료할 수 있습니다."
         }
     }
 
@@ -1090,6 +1116,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Slave-Wechsel"
         case .french: return "Changement de slave"
         case .chinese: return "Slave 切换"
+        case .korean: return "Slave 전환"
         }
     }
 
@@ -1105,6 +1132,8 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
             return "Définit comment déplacer le contrôle d’un slave à l’autre lorsque « Ce Mac est Master » est actif. En mode natif, macOS continue de gérer normalement le bureau du master. En mode relais, TargetBridge utilise les bords gauche et droit de l’écran ainsi que les raccourcis Ctrl+Option+Gauche/Droite pour déplacer le contrôle vers le slave précédent ou suivant."
         case .chinese:
             return "决定在“这台 Mac 是 Master”启用时如何在不同 slave 之间切换控制。原生模式下，macOS 继续正常处理 master 的桌面；relay 模式下，TargetBridge 会使用屏幕左右边缘以及 Ctrl+Option+Left/Right 热键，把控制切换到上一个或下一个 slave。"
+        case .korean:
+            return "'이 Mac이 Master'가 활성화된 상태에서 Slave 간 제어를 전환하는 방식을 선택합니다. 네이티브 모드에서는 macOS가 Master의 데스크톱을 평소처럼 처리합니다. Relay 모드에서는 TargetBridge가 화면 왼쪽/오른쪽 가장자리와 Ctrl+Option+Left/Right 단축키를 사용해 제어를 이전 또는 다음 Slave로 옮깁니다."
         }
     }
 
@@ -1115,11 +1144,13 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case (.native, .german): return "Desktop des Masters nativ lassen"
         case (.native, .french): return "Conserver le bureau natif du master"
         case (.native, .chinese): return "保留 master 的原生桌面行为"
+        case (.native, .korean): return "Master 데스크톱 기본 동작 유지"
         case (.relayToSlave, .italian): return "Usa bordi schermo e hotkey per cambiare slave"
         case (.relayToSlave, .english): return "Use screen edges and hotkeys to switch slave"
         case (.relayToSlave, .german): return "Bildschirmränder und Hotkeys für Slave-Wechsel nutzen"
         case (.relayToSlave, .french): return "Utiliser les bords de l’écran et les raccourcis pour changer de slave"
         case (.relayToSlave, .chinese): return "使用屏幕边缘和热键切换 slave"
+        case (.relayToSlave, .korean): return "화면 가장자리와 단축키로 Slave 전환"
         }
     }
 
@@ -1130,16 +1161,19 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case (.off, .german): return "Aus"
         case (.off, .french): return "Désactivé"
         case (.off, .chinese): return "关闭"
+        case (.off, .korean): return "끔"
         case (.senderMaster, .italian): return "Questo Mac e Master"
         case (.senderMaster, .english): return "This Mac is Master"
         case (.senderMaster, .german): return "Dieser Mac ist Master"
         case (.senderMaster, .french): return "Ce Mac est Master"
         case (.senderMaster, .chinese): return "这台 Mac 是 Master"
+        case (.senderMaster, .korean): return "이 Mac이 Master"
         case (.receiverMaster, .italian): return "Receiver e Master"
         case (.receiverMaster, .english): return "Receiver is Master"
         case (.receiverMaster, .german): return "Empfänger ist Master"
         case (.receiverMaster, .french): return "Le receiver est Master"
         case (.receiverMaster, .chinese): return "Receiver 是 Master"
+        case (.receiverMaster, .korean): return "Receiver가 Master"
         }
     }
 
@@ -1150,6 +1184,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Der Sender kann noch keine Eingaben injizieren"
         case .french: return "Le sender ne peut pas encore injecter d’entrées"
         case .chinese: return "Sender 目前还不能注入输入"
+        case .korean: return "Sender가 아직 입력을 주입할 수 없습니다"
         }
     }
 
@@ -1165,6 +1200,8 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
             return "Pour utiliser « Le receiver est Master », cette app TargetBridge sur le sender doit être autorisée dans Confidentialité et sécurité > Accessibilité. Ouvrez les réglages, activez l’app que vous utilisez réellement, puis rouvrez la session. Les raccourcis configurés exigent aussi une autorisation macOS unique pour contrôler System Events."
         case .chinese:
             return "要使用“Receiver 是 Master”，sender 上这份 TargetBridge 必须在“隐私与安全性 > 辅助功能”中被允许。打开设置，启用你当前运行的这份应用，然后重新打开会话。已配置的快捷键还需要一次性授权 TargetBridge 控制 System Events。"
+        case .korean:
+            return "'Receiver가 Master'를 사용하려면 Sender의 TargetBridge 앱이 개인정보 보호 및 보안 > 손쉬운 사용에서 허용되어 있어야 합니다. 설정을 열고 실제로 실행 중인 앱을 활성화한 다음 세션을 다시 여세요. 구성된 단축키를 사용하려면 System Events 제어에 대한 macOS 권한도 한 번 허용해야 합니다."
         }
     }
 
@@ -1175,6 +1212,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Bedienungshilfen öffnen"
         case .french: return "Ouvrir Accessibilité"
         case .chinese: return "打开辅助功能"
+        case .korean: return "손쉬운 사용 열기"
         }
     }
 
@@ -1189,6 +1227,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Eingabeüberwachung fehlt auf dem Sender"
         case .french: return "La surveillance des entrées manque sur le sender"
         case .chinese: return "sender 缺少输入监控权限"
+        case .korean: return "Sender에 입력 모니터링 권한이 없습니다"
         }
     }
 
@@ -1204,6 +1243,8 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
             return "Pour utiliser « Ce Mac est Master » de façon fiable en dehors de la fenêtre active, le sender a besoin de l’autorisation Surveillance des entrées. Sans elle, certaines touches ou certains événements globaux du pointeur peuvent ne pas être capturés."
         case .chinese:
             return "要让“这台 Mac 是 Master”在活动窗口之外也可靠工作，sender 需要“输入监控”权限。没有它，一些按键或全局指针事件可能无法被捕获。"
+        case .korean:
+            return "'이 Mac이 Master'를 활성 앱 창 밖에서도 안정적으로 사용하려면 Sender에 입력 모니터링 권한이 필요합니다. 권한이 없으면 일부 키나 전역 포인터 이벤트가 캡처되지 않을 수 있습니다."
         }
     }
 
@@ -1214,6 +1255,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Bedienungshilfen fehlen auf dem Empfänger"
         case .french: return "L’accessibilité manque sur le receiver"
         case .chinese: return "receiver 缺少辅助功能权限"
+        case .korean: return "Receiver에 손쉬운 사용 권한이 없습니다"
         }
     }
 
@@ -1229,6 +1271,8 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
             return "Avec « Ce Mac est Master », le receiver doit pouvoir injecter les clics et les événements clavier. Sur le Mac receiver, activez TargetBridge Receiver dans Confidentialité et sécurité > Accessibilité."
         case .chinese:
             return "在“这台 Mac 是 Master”模式下，receiver 必须被允许注入点击和键盘事件。请在 receiver Mac 的“隐私与安全性 > 辅助功能”中启用 TargetBridge Receiver。"
+        case .korean:
+            return "'이 Mac이 Master' 모드에서는 Receiver가 클릭과 키보드 이벤트를 주입할 수 있도록 허용되어야 합니다. Receiver Mac의 개인정보 보호 및 보안 > 손쉬운 사용에서 TargetBridge Receiver를 활성화하세요."
         }
     }
 
@@ -1239,6 +1283,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Eingabeüberwachung fehlt auf dem Empfänger"
         case .french: return "La surveillance des entrées manque sur le receiver"
         case .chinese: return "receiver 缺少输入监控权限"
+        case .korean: return "Receiver에 입력 모니터링 권한이 없습니다"
         }
     }
 
@@ -1254,6 +1299,8 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
             return "Avec « Le receiver est Master », le Mac receiver doit pouvoir lire les entrées clavier et souris locales. Sur le receiver, activez TargetBridge Receiver dans Confidentialité et sécurité > Surveillance des entrées."
         case .chinese:
             return "在“Receiver 是 Master”模式下，receiver Mac 必须被允许读取本地键盘和鼠标输入。请在 receiver 上的“隐私与安全性 > 输入监控”中启用 TargetBridge Receiver。"
+        case .korean:
+            return "'Receiver가 Master' 모드에서는 Receiver Mac이 로컬 키보드와 마우스 입력을 읽을 수 있도록 허용되어야 합니다. Receiver의 개인정보 보호 및 보안 > 입력 모니터링에서 TargetBridge Receiver를 활성화하세요."
         }
     }
 
@@ -1264,6 +1311,7 @@ private struct TBDisplaySenderSessionSettingsSheet: View {
         case .german: return "Einstellungen öffnen"
         case .french: return "Ouvrir les réglages"
         case .chinese: return "打开设置"
+        case .korean: return "설정 열기"
         }
     }
 

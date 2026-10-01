@@ -122,6 +122,7 @@ struct TBDisplaySenderAboutView: View {
         case .german: return "Bringt die Idee von Target Display Mode mit einer direkten Mac-zu-Mac-Display-Pipeline zurück auf Apple Silicon."
         case .french: return "Redonne vie à l’idée du Target Display Mode sur Apple Silicon grâce à une chaîne d’affichage directe de Mac à Mac."
         case .chinese: return "通过直接的 Mac 到 Mac 显示管线，把 Target Display Mode 的理念带回 Apple Silicon 时代。"
+        case .korean: return "Mac 간 직접 디스플레이 파이프라인으로 Target Display Mode의 개념을 Apple Silicon에서 다시 구현합니다."
         }
     }
 
@@ -132,6 +133,7 @@ struct TBDisplaySenderAboutView: View {
         case .german: return "Projekt"
         case .french: return "Projet"
         case .chinese: return "项目"
+        case .korean: return "프로젝트"
         }
     }
 
@@ -142,6 +144,7 @@ struct TBDisplaySenderAboutView: View {
         case .german: return "TargetBridge erfasst den Sender-Desktop oder das virtuelle Display, kodiert den Stream und zeigt ihn auf einem iMac-Empfänger über Thunderbolt Bridge oder experimentellen Network Link an."
         case .french: return "TargetBridge capture le bureau ou l’écran virtuel du sender, encode le flux et l’affiche sur un iMac receiver via Thunderbolt Bridge ou Network Link expérimental."
         case .chinese: return "TargetBridge 会捕获发送端 Mac 的桌面或虚拟显示器，对流进行编码，并通过 Thunderbolt Bridge 或实验性的 Network Link 在 iMac 接收端上显示。"
+        case .korean: return "TargetBridge는 Sender의 데스크톱 또는 가상 디스플레이를 캡처하고 스트림을 인코딩한 뒤, Thunderbolt Bridge 또는 실험적 기능인 Network Link를 통해 iMac Receiver에 표시합니다."
         }
     }
 
@@ -152,6 +155,7 @@ struct TBDisplaySenderAboutView: View {
         case .german: return "Mitwirkende"
         case .french: return "Crédits"
         case .chinese: return "致谢"
+        case .korean: return "크레딧"
         }
     }
 
@@ -162,6 +166,7 @@ struct TBDisplaySenderAboutView: View {
         case .german: return "Erstellt von swellweb mit Unterstützung der TargetBridge-Open-Source-Community. Wichtige Beiträge von Testern und Mitwirkenden wie ThomasWaldmann, DrDavidL, potar712 und weiteren Community-Mitgliedern."
         case .french: return "Créé par swellweb avec le soutien de la communauté open source TargetBridge. Contributions essentielles de testeurs et collaborateurs comme ThomasWaldmann, DrDavidL, potar712 et d’autres membres de la communauté."
         case .chinese: return "由 swellweb 在 TargetBridge 开源社区的支持下创建。ThomasWaldmann、DrDavidL、potar712 以及其他社区成员提供了重要测试和协作贡献。"
+        case .korean: return "swellweb이 TargetBridge 오픈 소스 커뮤니티의 지원을 받아 제작했습니다. ThomasWaldmann, DrDavidL, potar712 등 테스터와 협력자, 그리고 여러 커뮤니티 구성원이 중요한 기여를 했습니다."
         }
     }
 
@@ -172,6 +177,7 @@ struct TBDisplaySenderAboutView: View {
         case .german: return "GitHub"
         case .french: return "GitHub"
         case .chinese: return "GitHub"
+        case .korean: return "GitHub"
         }
     }
 
@@ -182,6 +188,7 @@ struct TBDisplaySenderAboutView: View {
         case .german: return "Letztes Release"
         case .french: return "Dernière version"
         case .chinese: return "最新发布"
+        case .korean: return "최신 릴리스"
         }
     }
 
@@ -192,6 +199,7 @@ struct TBDisplaySenderAboutView: View {
         case .german: return "Version"
         case .french: return "Version"
         case .chinese: return "版本"
+        case .korean: return "버전"
         }
     }
 
@@ -202,6 +210,7 @@ struct TBDisplaySenderAboutView: View {
         case .german: return "Schließen"
         case .french: return "Fermer"
         case .chinese: return "关闭"
+        case .korean: return "닫기"
         }
     }
 }
