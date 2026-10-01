@@ -56,6 +56,10 @@ struct tb_display {
     int           system_cursor_hidden;
     /* Video and cursor are drawn by Core Animation layers outside SDL. */
     int           external_video;
+    int           prefer_metal;
+    /* Extra idle-screen lines ('\n'-separated): video output and 10-bit state. */
+    char          footer_note[768];
+    int           footer_dirty;
     int           cursor_dirty;
     int           cursor_out_w;
 
@@ -477,6 +481,14 @@ static void tb_disp_rebuild_status_texture(struct tb_display *d,
     tb_disp_draw_text(ctx, tb_i18n_get("receiver.ui.help_1"), body_font, 17, 72, 138, 0.76, 0.80, 0.88);
     tb_disp_draw_text(ctx, tb_i18n_get("receiver.ui.help_2"), body_font, 17, 72, 108, 0.76, 0.80, 0.88);
     tb_disp_draw_text(ctx, tb_i18n_get("receiver.ui.help_4"), body_font, 17, 72, 78, 0.76, 0.80, 0.88);
+    if (d->footer_note[0] != '\0') {
+        char lines[sizeof(d->footer_note)];
+        snprintf(lines, sizeof(lines), "%s", d->footer_note);
+        char *second = strchr(lines, '\n');
+        if (second) *second++ = '\0';
+        tb_disp_draw_text(ctx, lines, body_font, 17, 72, 48, 0.86, 0.90, 0.96);
+        if (second) tb_disp_draw_text(ctx, second, body_font, 17, 72, 20, 0.86, 0.90, 0.96);
+    }
     }
 
     CGContextRelease(ctx);
@@ -541,13 +553,7 @@ static SDL_Renderer *tb_disp_try_renderer(SDL_Window *win, const char *driver) {
     return ren;
 }
 
-int tb_disp_video_layer_requested(void) {
-    /* On by default; TB_RECEIVER_VIDEO_LAYER=0 selects the FFmpeg + SDL texture path. */
-    const char *value = getenv("TB_RECEIVER_VIDEO_LAYER");
-    return !(value && value[0] == '0');
-}
-
-static SDL_Renderer *tb_disp_create_accelerated_renderer(SDL_Window *win) {
+static SDL_Renderer *tb_disp_create_accelerated_renderer(SDL_Window *win, int prefer_metal) {
     const char *forced_driver = getenv("TB_RECEIVER_RENDER_DRIVER");
     if (forced_driver && forced_driver[0] != '\0') {
         fprintf(stderr, "[disp] renderer override = %s\n", forced_driver);
@@ -556,7 +562,6 @@ static SDL_Renderer *tb_disp_create_accelerated_renderer(SDL_Window *win) {
 
 #if defined(__APPLE__)
     /* With the video layer SDL only renders status screens, so prefer Metal. */
-    const int prefer_metal = tb_disp_video_layer_requested();
     const char *opengl_first[] = { "opengl", "metal", NULL };
     const char *metal_first[] = { "metal", "opengl", NULL };
     const char **macos_drivers = prefer_metal ? metal_first : opengl_first;
@@ -569,7 +574,7 @@ static SDL_Renderer *tb_disp_create_accelerated_renderer(SDL_Window *win) {
     return tb_disp_try_renderer(win, NULL);
 }
 
-struct tb_display *tb_disp_create(int fullscreen) {
+struct tb_display *tb_disp_create(int fullscreen, int prefer_metal) {
     /* Best-quality scaling (linear filter; Metal backend uses bilinear
      * regardless but this sets the hint correctly). "best" enables
      * anisotropic where supported. Must be set BEFORE renderer creation. */
@@ -596,7 +601,8 @@ struct tb_display *tb_disp_create(int fullscreen) {
     /* No VSYNC: lets us present as fast as decode produces frames.
      * On Intel iMac with Radeon Pro 570 + 5K display, VSYNC at 60Hz combined
      * with GPU→CPU NV12 transfer was stalling the pipeline to ~4 fps. */
-    d->ren = tb_disp_create_accelerated_renderer(d->win);
+    d->prefer_metal = prefer_metal ? 1 : 0;
+    d->ren = tb_disp_create_accelerated_renderer(d->win, d->prefer_metal);
     if (!d->ren) {
         fprintf(stderr, "[disp] CreateRenderer: %s\n", SDL_GetError());
         SDL_DestroyWindow(d->win); free(d); return NULL;
@@ -1193,6 +1199,48 @@ void tb_disp_set_cursor(struct tb_display *d,
     }
 }
 
+void tb_disp_set_footer_note(struct tb_display *d, const char *note) {
+    if (!d) return;
+    if (!note) note = "";
+    if (strcmp(d->footer_note, note) == 0) return;
+    snprintf(d->footer_note, sizeof(d->footer_note), "%s", note);
+    d->footer_dirty = 1;
+}
+
+int tb_disp_switch_renderer(struct tb_display *d, int prefer_metal) {
+    if (!d || !d->win) return -1;
+    prefer_metal = prefer_metal ? 1 : 0;
+    if (d->ren && d->prefer_metal == prefer_metal) return 0;
+
+    /* Textures belong to the renderer; drop them and let the next frame or
+     * status render recreate them. */
+    tb_disp_destroy_status_texture(d);
+    if (d->tex) {
+        SDL_DestroyTexture(d->tex);
+        d->tex = NULL;
+        d->tex_w = d->tex_h = 0;
+    }
+    if (d->ren) SDL_DestroyRenderer(d->ren);
+    d->prefer_metal = prefer_metal;
+    d->ren = tb_disp_create_accelerated_renderer(d->win, prefer_metal);
+    if (!d->ren) {
+        /* Never leave the window without a renderer: try the other order. */
+        fprintf(stderr, "[disp] renderer switch failed: %s\n", SDL_GetError());
+        d->prefer_metal = !prefer_metal;
+        d->ren = tb_disp_create_accelerated_renderer(d->win, d->prefer_metal);
+        if (!d->ren) return -1;
+    }
+    SDL_SetYUVConversionMode(SDL_YUV_CONVERSION_BT709);
+    SDL_RenderSetLogicalSize(d->ren, 0, 0);
+    SDL_RendererInfo info;
+    if (SDL_GetRendererInfo(d->ren, &info) == 0) {
+        fprintf(stderr, "[disp] renderer = %s\n", info.name);
+    }
+    d->last_ip[0] = '\0';
+    d->footer_dirty = 1;
+    return 0;
+}
+
 void *tb_disp_cocoa_window(struct tb_display *d) {
     if (!d || !d->win) return NULL;
     SDL_SysWMinfo info;
@@ -1289,6 +1337,14 @@ unsigned int tb_disp_poll_actions(struct tb_display *d) {
                  !d->input_intercept_active &&
                  ev.type == SDL_KEYDOWN &&
                  ev.key.keysym.sym == SDLK_l) actions |= TB_DISP_ACTION_CYCLE_LANGUAGE;
+        else if (!d->input_capture_active &&
+                 !d->input_intercept_active &&
+                 ev.type == SDL_KEYDOWN &&
+                 ev.key.keysym.sym == SDLK_v) actions |= TB_DISP_ACTION_TOGGLE_VIDEO_LAYER;
+        else if (!d->input_capture_active &&
+                 !d->input_intercept_active &&
+                 ev.type == SDL_KEYDOWN &&
+                 ev.key.keysym.sym == SDLK_m) actions |= TB_DISP_ACTION_TOGGLE_MAIN10;
         else if (d->input_capture_active) {
             struct tb_input_event input_event;
             memset(&input_event, 0, sizeof(input_event));
@@ -1554,7 +1610,9 @@ void tb_disp_render_status(struct tb_display *d,
         d->last_drawable_w != drawable_w ||
         d->last_drawable_h != drawable_h ||
         d->status_tex == NULL ||
+        d->footer_dirty ||
         d->status_is_connecting) {
+        d->footer_dirty = 0;
         snprintf(d->last_ip, sizeof(d->last_ip), "%s", ip);
         snprintf(d->last_status, sizeof(d->last_status), "%s", status);
         snprintf(d->last_sender, sizeof(d->last_sender), "%s", sender);

@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Targets macOS 13, so use the layer's own enqueue API. */
+/* Deployment target is macOS 11, so use the layer's own enqueue API. */
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
@@ -19,6 +19,18 @@
 #define TB_VLAYER_MAX_FAILURES 3
 /* Enqueued frames without a failure before the failure count resets. */
 #define TB_VLAYER_HEALTHY_FRAMES 300
+/* Main10 backlog flushes within the window that mark the decoder as too slow. */
+#define TB_VLAYER_MAIN10_BACKLOG_FLUSHES 3
+#define TB_VLAYER_MAIN10_BACKLOG_WINDOW 5.0
+
+/* Decode-failure flag with its own lifetime, so a notification block that is
+ * still queued after the layer is destroyed never touches freed memory. */
+@interface TBVideoLayerFlag : NSObject
+@property(atomic) BOOL raised;
+@end
+
+@implementation TBVideoLayerFlag
+@end
 
 /* Video host view that lets clicks through to the SDL view. */
 @interface TBVideoHostView : NSView
@@ -57,6 +69,11 @@ struct tb_video_layer {
     int need_keyframe;
     int failures;
     int frames_since_failure;
+    /* Raised by AVSampleBufferDisplayLayerFailedToDecodeNotification. */
+    TBVideoLayerFlag *decode_failed;
+    id decode_observer;
+    CFAbsoluteTime main10_flush_times[TB_VLAYER_MAIN10_BACKLOG_FLUSHES];
+    int main10_flush_count;
     uint8_t *last_ps;
     size_t last_ps_len;
     struct tb_video_layer_stats stats;
@@ -129,6 +146,17 @@ struct tb_video_layer *tb_vlayer_create(void *nswindow, void *metal_layer) {
     v->layer = layer;
     v->cursor = cursor;
     v->overlay = (NSView *)overlay;
+    /* Decode errors do not always flip the layer to Failed; count them too. */
+    TBVideoLayerFlag *decode_failed = [TBVideoLayerFlag new];
+    v->decode_failed = decode_failed;
+    v->decode_observer = [[NSNotificationCenter defaultCenter]
+        addObserverForName:AVSampleBufferDisplayLayerFailedToDecodeNotification
+                    object:layer
+                     queue:[NSOperationQueue mainQueue]
+                usingBlock:^(NSNotification *note) {
+                    (void)note;
+                    decode_failed.raised = YES;
+                }];
     v->need_keyframe = 1;
     fprintf(stderr, "[vlayer] AVSampleBufferDisplayLayer enabled\n");
     return v;
@@ -136,6 +164,11 @@ struct tb_video_layer *tb_vlayer_create(void *nswindow, void *metal_layer) {
 
 void tb_vlayer_destroy(struct tb_video_layer *v) {
     if (!v) return;
+    if (v->decode_observer) {
+        [[NSNotificationCenter defaultCenter] removeObserver:v->decode_observer];
+        v->decode_observer = nil;
+    }
+    v->decode_failed = nil;
     [v->layer flushAndRemoveImage];
     [v->view removeFromSuperview];
     v->overlay.hidden = NO;
@@ -200,6 +233,23 @@ static int tb_vlayer_apply_param_sets(struct tb_video_layer *v, const uint8_t *p
         return -1;
     }
 
+    if (codec == 2 && profile_idc == 2) {
+        /* The startup probe uses 4K; confirm hardware decode at the real size. */
+        NSDictionary *spec = @{ (__bridge NSString *)kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: @YES };
+        VTDecompressionSessionRef probe = NULL;
+        OSStatus probe_status = VTDecompressionSessionCreate(kCFAllocatorDefault, fmt,
+                                                             (__bridge CFDictionaryRef)spec, NULL, NULL, &probe);
+        if (probe) {
+            VTDecompressionSessionInvalidate(probe);
+            CFRelease(probe);
+        }
+        if (probe_status != noErr) {
+            fprintf(stderr, "[vlayer] no hardware Main10 decoder for this stream (%d)\n", (int)probe_status);
+            CFRelease(fmt);
+            return TB_VLAYER_MAIN10_UNSUPPORTED;
+        }
+    }
+
     CMVideoDimensions dims = CMVideoFormatDescriptionGetDimensions(fmt);
     if (v->fmt && (dims.width != v->width || dims.height != v->height || codec != v->codec)) {
         [v->layer flush];
@@ -227,7 +277,8 @@ static int tb_vlayer_apply_param_sets(struct tb_video_layer *v, const uint8_t *p
 int tb_vlayer_enqueue(struct tb_video_layer *v, const uint8_t *avcc, size_t len) {
     if (!v || !v->fmt || !avcc || len < 5) return 0;
 
-    if (v->layer.status == AVQueuedSampleBufferRenderingStatusFailed) {
+    if (v->layer.status == AVQueuedSampleBufferRenderingStatusFailed || v->decode_failed.raised) {
+        v->decode_failed.raised = NO;
         NSError *error = v->layer.error;
         fprintf(stderr, "[vlayer] layer failed: %s\n",
                 error ? error.localizedDescription.UTF8String : "unknown");
@@ -252,6 +303,20 @@ int tb_vlayer_enqueue(struct tb_video_layer *v, const uint8_t *avcc, size_t len)
         }
         [v->layer flush];
         v->stats.flushes++;
+        if (tb_vlayer_is_main10(v)) {
+            /* Repeated backlog on Main10: the decoder cannot keep up at this size. */
+            CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+            int slot = v->main10_flush_count % TB_VLAYER_MAIN10_BACKLOG_FLUSHES;
+            v->main10_flush_times[slot] = now;
+            v->main10_flush_count++;
+            if (v->main10_flush_count >= TB_VLAYER_MAIN10_BACKLOG_FLUSHES) {
+                int oldest = v->main10_flush_count % TB_VLAYER_MAIN10_BACKLOG_FLUSHES;
+                if (now - v->main10_flush_times[oldest] <= TB_VLAYER_MAIN10_BACKLOG_WINDOW) {
+                    fprintf(stderr, "[vlayer] Main10 decode cannot keep up\n");
+                    return TB_VLAYER_MAIN10_TOO_SLOW;
+                }
+            }
+        }
     }
 
     CMBlockBufferRef block = NULL;
@@ -367,6 +432,33 @@ void tb_vlayer_refresh_cursor(struct tb_video_layer *v) {
                          v->cursor_source_w, v->cursor_large);
 }
 
+void tb_vlayer_use_fallback_cursor(struct tb_video_layer *v, int size) {
+    if (!v || size <= 0) return;
+    /* Plain arrow drawn with Core Graphics when the SDL sprite cannot be made. */
+    const int dim = size * 3;
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef ctx = CGBitmapContextCreate(NULL, (size_t)dim, (size_t)dim, 8, (size_t)dim * 4, space,
+                                             kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+    CGColorSpaceRelease(space);
+    if (!ctx) return;
+    /* Bitmap origin is bottom-left; the hotspot sits at (size, size) from the top-left. */
+    const CGFloat s = size / 32.0, ox = size, oy = dim - size;
+    const CGPoint pts[] = {
+        { ox + 0 * s, oy - 0 * s }, { ox + 0 * s, oy - 26 * s }, { ox + 6 * s, oy - 20 * s },
+        { ox + 11 * s, oy - 31 * s }, { ox + 15 * s, oy - 29 * s }, { ox + 10 * s, oy - 18 * s },
+        { ox + 18 * s, oy - 18 * s }
+    };
+    CGContextAddLines(ctx, pts, sizeof(pts) / sizeof(pts[0]));
+    CGContextClosePath(ctx);
+    CGContextSetRGBFillColor(ctx, 0, 0, 0, 1);
+    CGContextSetRGBStrokeColor(ctx, 1, 1, 1, 1);
+    CGContextSetLineWidth(ctx, 2.0 * s);
+    CGContextDrawPath(ctx, kCGPathFillStroke);
+    const uint8_t *pixels = CGBitmapContextGetData(ctx);
+    if (pixels) tb_vlayer_set_cursor_image(v, pixels, dim, size);
+    CGContextRelease(ctx);
+}
+
 int tb_vlayer_set_cursor_png(struct tb_video_layer *v, const uint8_t *png, size_t len,
                              int hotspot_x, int hotspot_y, int width, int height) {
     if (!v || !png || len == 0 || width <= 0 || height <= 0) return -1;
@@ -459,6 +551,8 @@ void tb_vlayer_reset(struct tb_video_layer *v) {
     v->need_keyframe = 1;
     v->failures = 0;
     v->frames_since_failure = 0;
+    v->decode_failed.raised = NO;
+    v->main10_flush_count = 0;
     tb_vlayer_set_visible(v, 0);
 }
 

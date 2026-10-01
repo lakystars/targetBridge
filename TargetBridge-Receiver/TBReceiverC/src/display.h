@@ -25,10 +25,12 @@ struct tb_display_info {
 enum tb_display_action {
     TB_DISP_ACTION_NONE = 0,
     TB_DISP_ACTION_QUIT = 1 << 0,
-    TB_DISP_ACTION_CYCLE_LANGUAGE = 1 << 1
+    TB_DISP_ACTION_CYCLE_LANGUAGE = 1 << 1,
+    TB_DISP_ACTION_TOGGLE_VIDEO_LAYER = 1 << 2,
+    TB_DISP_ACTION_TOGGLE_MAIN10 = 1 << 3
 };
 
-struct tb_display *tb_disp_create(int fullscreen);
+struct tb_display *tb_disp_create(int fullscreen, int prefer_metal);
 void               tb_disp_destroy(struct tb_display *d);
 void               tb_disp_set_connection_state(struct tb_display *d, int connected);
 void               tb_disp_set_input_capture_active(struct tb_display *d, int active);
@@ -43,7 +45,10 @@ int                tb_disp_window_on_active_space(struct tb_display *d);
 int  tb_disp_ensure_texture(struct tb_display *d, int w, int h);
 
 /* External video layer integration (tb_video_layer). */
-int   tb_disp_video_layer_requested(void);
+/* Recreates the SDL renderer (Metal-first or OpenGL-first); textures are rebuilt lazily. */
+int   tb_disp_switch_renderer(struct tb_display *d, int prefer_metal);
+/* Extra idle-screen lines (newline-separated): video output and 10-bit state. */
+void  tb_disp_set_footer_note(struct tb_display *d, const char *note);
 void *tb_disp_cocoa_window(struct tb_display *d);
 void *tb_disp_metal_layer(struct tb_display *d);
 void  tb_disp_set_external_video(struct tb_display *d, int active);

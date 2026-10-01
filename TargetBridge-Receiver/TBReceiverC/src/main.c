@@ -73,6 +73,18 @@ struct app {
     int      cursor_sprite_size;
     /* Sender supplied a native cursor bitmap; skip built-in sprites. */
     int      cursor_image_active;
+    /* Persisted fallbacks: the user's video-output choice ("on"/"off"),
+     * repeated layer failures (two or more start the next launch on the
+     * FFmpeg/OpenGL path) and an automatic Main10 opt-out. M and V on the
+     * idle screen re-enable them. */
+    char     video_layer_pref[8];
+    int      video_layer_failures;
+    /* "on", "off" (user, M key) or "auto-off" (no hardware Main10 decoder). */
+    char     main10_pref[12];
+    /* Main10 turned off until the next launch after decode trouble that may be
+     * transient (layer failure, backlog). Cleared by M. */
+    int      main10_runtime_off;
+    uint64_t vlayer_session_frames;
     /* Per-second stage timings, enabled with TB_RECEIVER_TIMING=1. */
     int      timing_enabled;
     uint64_t timing_bytes;
@@ -212,7 +224,9 @@ static void tb_set_receiver_mode_requested(char *dest,
                                            const char *codec);
 static void tb_refresh_idle_localized_strings(struct app *a);
 static void tb_receiver_load_language_preference(char *dest, size_t size);
-static void tb_receiver_save_settings(const char *language_pref, const char *sender_language);
+struct app;
+static void tb_receiver_save_settings(const struct app *a);
+static void tb_receiver_send_teardown(struct app *a, const char *reason);
 static void tb_receiver_apply_language_preference(struct app *a);
 static void tb_receiver_cycle_language_preference(struct app *a);
 static void tb_receiver_refresh_language_text(struct app *a);
@@ -288,7 +302,7 @@ static void tb_receiver_read_setting(const char *key, char *dest, size_t size) {
     if (!pos) return;
     pos++;
 
-    char value[8];
+    char value[16];
     size_t i = 0;
     while (*pos && *pos != '"' && i + 1 < sizeof(value)) value[i++] = *pos++;
     value[i] = '\0';
@@ -312,8 +326,8 @@ static void tb_receiver_load_sender_language(char *dest, size_t size) {
     snprintf(dest, size, "%s", valid ? code : "");
 }
 
-static void tb_receiver_save_settings(const char *language_pref, const char *sender_language) {
-    if (!tb_receiver_is_valid_language_pref(language_pref)) return;
+static void tb_receiver_save_settings(const struct app *a) {
+    if (!a || !tb_receiver_is_valid_language_pref(a->language_pref)) return;
     tb_receiver_ensure_settings_dir();
 
     char path[PATH_MAX];
@@ -322,10 +336,17 @@ static void tb_receiver_save_settings(const char *language_pref, const char *sen
 
     FILE *fp = fopen(path, "wb");
     if (!fp) return;
-    const int sender_valid = sender_language && tb_receiver_is_valid_language_pref(sender_language) &&
+    const char *sender_language = a->sender_ui_language;
+    const int sender_valid = tb_receiver_is_valid_language_pref(sender_language) &&
                              strcmp(sender_language, "auto") != 0;
-    fprintf(fp, "{\n  \"language\": \"%s\",\n  \"senderLanguage\": \"%s\"\n}\n",
-            language_pref, sender_valid ? sender_language : "");
+    fprintf(fp,
+            "{\n  \"language\": \"%s\",\n  \"senderLanguage\": \"%s\",\n"
+            "  \"videoLayer\": \"%s\",\n  \"videoLayerFailures\": \"%d\",\n"
+            "  \"main10\": \"%s\"\n}\n",
+            a->language_pref, sender_valid ? sender_language : "",
+            strcmp(a->video_layer_pref, "off") == 0 ? "off" : "on",
+            a->video_layer_failures < 0 ? 0 : (a->video_layer_failures > 9 ? 9 : a->video_layer_failures),
+            a->main10_pref[0] ? a->main10_pref : "on");
     fclose(fp);
 }
 
@@ -479,7 +500,7 @@ static void tb_receiver_cycle_language_preference(struct app *a) {
         snprintf(a->language_pref, sizeof(a->language_pref), "%s", "auto");
     }
 
-    tb_receiver_save_settings(a->language_pref, a->sender_ui_language);
+    tb_receiver_save_settings(a);
     tb_receiver_apply_language_preference(a);
 }
 
@@ -952,16 +973,32 @@ static void tb_receiver_apply_input_control_mode(struct app *a, const uint8_t *p
 /* ---- Callbacks: decoder → display ------------------------------------ */
 
 /* Drop the video layer and continue on the FFmpeg + SDL texture path. */
-static void tb_receiver_disable_vlayer(struct app *a, const char *reason, int renegotiate) {
+static void tb_receiver_disable_vlayer(struct app *a, const char *reason, int count_failure) {
     if (!a->vlayer) return;
     fprintf(stderr, "[vlayer] disabled (%s), falling back to FFmpeg decode\n", reason);
     tb_vlayer_destroy(a->vlayer);
     a->vlayer = NULL;
     a->cursor_image_active = 0;
     tb_disp_set_external_video(a->disp, 0);
-    /* The sender picked codec settings (e.g. Main10) for the layer; drop the
-     * session so the next connection negotiates against the FFmpeg path. */
-    if (renegotiate) a->close_requested = 1;
+    if (count_failure) {
+        a->video_layer_failures++;
+        tb_receiver_save_settings(a);
+    }
+}
+
+/* This Mac cannot decode the Main10 stream: keep the video layer, stop
+ * advertising Main10 and drop the session so the Sender reconnects in 8-bit. */
+static void tb_receiver_disable_main10(struct app *a, const char *reason, int persist) {
+    if (a->close_requested) return;
+    fprintf(stderr, "[vlayer] Main10 disabled (%s), renegotiating\n", reason);
+    if (persist) {
+        snprintf(a->main10_pref, sizeof(a->main10_pref), "%s", "auto-off");
+        tb_receiver_save_settings(a);
+    } else {
+        a->main10_runtime_off = 1;
+    }
+    tb_receiver_send_teardown(a, "renegotiate");
+    a->close_requested = 1;
 }
 
 static void tb_mark_video_frame(struct app *a, int w, int h) {
@@ -1172,11 +1209,11 @@ static void on_packet(uint8_t type, const uint8_t *payload, size_t len, void *ud
             ui_language[0] = '\0';
             extract_json_string_field(payload, len, "\"uiLanguage\"", ui_language, sizeof(ui_language));
             if (ui_language[0] != '\0') {
-                if (strcmp(a->sender_ui_language, ui_language) != 0 &&
-                    tb_receiver_is_valid_language_pref(ui_language)) {
-                    tb_receiver_save_settings(a->language_pref, ui_language);
-                }
+                const int changed = strcmp(a->sender_ui_language, ui_language) != 0;
                 snprintf(a->sender_ui_language, sizeof(a->sender_ui_language), "%s", ui_language);
+                if (changed && tb_receiver_is_valid_language_pref(ui_language)) {
+                    tb_receiver_save_settings(a);
+                }
                 if (strcmp(a->language_pref, "auto") == 0) {
                     tb_i18n_set_runtime_language(ui_language);
                 }
@@ -1193,11 +1230,11 @@ static void on_packet(uint8_t type, const uint8_t *payload, size_t len, void *ud
             ui_language[0] = '\0';
             extract_json_string_field(payload, len, "\"uiLanguage\"", ui_language, sizeof(ui_language));
             if (ui_language[0] != '\0') {
-                if (strcmp(a->sender_ui_language, ui_language) != 0 &&
-                    tb_receiver_is_valid_language_pref(ui_language)) {
-                    tb_receiver_save_settings(a->language_pref, ui_language);
-                }
+                const int changed = strcmp(a->sender_ui_language, ui_language) != 0;
                 snprintf(a->sender_ui_language, sizeof(a->sender_ui_language), "%s", ui_language);
+                if (changed && tb_receiver_is_valid_language_pref(ui_language)) {
+                    tb_receiver_save_settings(a);
+                }
                 if (strcmp(a->language_pref, "auto") == 0) {
                     tb_i18n_set_runtime_language(ui_language);
                 }
@@ -1237,13 +1274,19 @@ static void on_packet(uint8_t type, const uint8_t *payload, size_t len, void *ud
         /* tb_dec_set_param_sets is now a no-op if the sets are unchanged,
          * so we don't spam a log line per keyframe. */
         tb_dec_set_param_sets(a->dec, payload, len);
-        if (a->vlayer && tb_vlayer_set_param_sets(a->vlayer, payload, len) < 0 &&
-            !tb_vlayer_has_format(a->vlayer)) {
-            tb_receiver_disable_vlayer(a, "unsupported parameter sets", 1);
+        if (a->close_requested) break;
+        if (a->vlayer) {
+            int r = tb_vlayer_set_param_sets(a->vlayer, payload, len);
+            if (r == TB_VLAYER_MAIN10_UNSUPPORTED) {
+                tb_receiver_disable_main10(a, "no hardware decoder at this size", 1);
+            } else if (r < 0 && !tb_vlayer_has_format(a->vlayer)) {
+                tb_receiver_disable_vlayer(a, "unsupported parameter sets", 1);
+            }
         }
         break;
     case TB_PKT_FRAME:
         a->session_active = 1;
+        if (a->close_requested) break;
         if (a->vlayer) {
             int r = tb_vlayer_enqueue(a->vlayer, payload, len);
             if (r > 0) {
@@ -1252,13 +1295,19 @@ static void on_packet(uint8_t type, const uint8_t *payload, size_t len, void *ud
                 tb_mark_video_frame(a, w, h);
                 tb_vlayer_set_visible(a->vlayer, 1);
                 tb_disp_present_external_frame(a->disp);
+                a->vlayer_session_frames++;
                 a->frames++;
                 a->timing_packets++;
                 break;
             }
             if (r == 0) break;
-            /* Only a Main10 stream needs renegotiation; 8-bit streams continue on FFmpeg. */
-            tb_receiver_disable_vlayer(a, "layer failed", tb_vlayer_is_main10(a->vlayer));
+            if (r == TB_VLAYER_MAIN10_TOO_SLOW || tb_vlayer_is_main10(a->vlayer)) {
+                /* Main10 trouble that may be transient: retry this run in 8-bit. */
+                tb_receiver_disable_main10(a, r == TB_VLAYER_MAIN10_TOO_SLOW ? "decoder too slow" : "layer failed", 0);
+                break;
+            }
+            /* 8-bit streams continue on FFmpeg within the same session. */
+            tb_receiver_disable_vlayer(a, "layer failed", 1);
         }
         if (a->timing_enabled) {
             /* on_frame renders inside the decode call; subtract that render time. */
@@ -1420,6 +1469,22 @@ static int drain_socket(struct app *a) {
             return -1;
         }
     }
+}
+
+static int send_all(int fd, const uint8_t *buf, size_t len);
+
+static void tb_receiver_send_teardown(struct app *a, const char *reason) {
+    if (!a || a->client_fd < 0 || !reason) return;
+    uint8_t pkt[128];
+    int json_len = snprintf((char *)pkt + 5, sizeof(pkt) - 5, "{\"reason\":\"%s\"}", reason);
+    if (json_len <= 0 || (size_t)json_len >= sizeof(pkt) - 5) return;
+    const uint32_t body = (uint32_t)(1 + json_len);
+    pkt[0] = (uint8_t)(body >> 24);
+    pkt[1] = (uint8_t)(body >> 16);
+    pkt[2] = (uint8_t)(body >> 8);
+    pkt[3] = (uint8_t)body;
+    pkt[4] = TB_PKT_TEARDOWN;
+    (void)send_all(a->client_fd, pkt, 5 + (size_t)json_len);
 }
 
 static void write_be32(uint8_t *dst, uint32_t value) {
@@ -1972,7 +2037,9 @@ static void send_receiver_info(struct app *a) {
         tb_dec_supports_hevc_hwdecode() ? "true" : "false",
         /* The FFmpeg path assumes 8-bit NV12; Main10 needs the video layer
          * and a hardware Main10 decoder. */
-        (a->vlayer && tb_dec_supports_hevc_hwdecode() && tb_vlayer_supports_main10_hw()) ? "true" : "false",
+        (a->vlayer && strcmp(a->main10_pref, "on") == 0 && !a->main10_runtime_off &&
+         tb_dec_supports_hevc_hwdecode() &&
+         tb_vlayer_supports_main10_hw()) ? "true" : "false",
         /* Cursor bitmaps are drawn by the video layer's cursor layer only. */
         a->vlayer ? "true" : "false",
         tb_receiver_input_monitoring_trusted() ? "true" : "false",
@@ -2013,11 +2080,102 @@ static void tb_receiver_sync_cursor(struct app *a) {
         if (tb_disp_render_cursor_sprite(a->disp, cs.type, cs.size, &pixels, &dim, &hotspot) == 0) {
             tb_vlayer_set_cursor_image(a->vlayer, pixels, dim, hotspot);
             free(pixels);
-            a->cursor_sprite_type = cs.type;
-            a->cursor_sprite_size = cs.size;
+        } else {
+            tb_vlayer_use_fallback_cursor(a->vlayer, cs.size);
         }
+        a->cursor_sprite_type = cs.type;
+        a->cursor_sprite_size = cs.size;
     }
     tb_vlayer_set_cursor(a->vlayer, cs.x_norm, cs.y_norm, cs.visible, cs.source_w, cs.large);
+}
+
+static void tb_receiver_load_video_settings(struct app *a) {
+    char value[8] = "on";
+    tb_receiver_read_setting("videoLayer", value, sizeof(value));
+    snprintf(a->video_layer_pref, sizeof(a->video_layer_pref), "%s", strcmp(value, "off") == 0 ? "off" : "on");
+    char failures[8] = "0";
+    tb_receiver_read_setting("videoLayerFailures", failures, sizeof(failures));
+    a->video_layer_failures = atoi(failures);
+    char main10[12] = "on";
+    tb_receiver_read_setting("main10", main10, sizeof(main10));
+    const int known = strcmp(main10, "off") == 0 || strcmp(main10, "auto-off") == 0;
+    snprintf(a->main10_pref, sizeof(a->main10_pref), "%s", known ? main10 : "on");
+}
+
+/* TB_RECEIVER_VIDEO_LAYER=0/1 overrides; otherwise the saved choice, and two
+ * or more recorded layer failures start this launch on the FFmpeg path. */
+static int tb_receiver_video_layer_wanted(const struct app *a) {
+    const char *env = getenv("TB_RECEIVER_VIDEO_LAYER");
+    if (env && env[0] == '0') return 0;
+    if (env && env[0] == '1') return 1;
+    if (strcmp(a->video_layer_pref, "off") == 0) return 0;
+    return a->video_layer_failures < 2;
+}
+
+static int tb_receiver_create_vlayer(struct app *a) {
+    a->vlayer = tb_vlayer_create(tb_disp_cocoa_window(a->disp), tb_disp_metal_layer(a->disp));
+    if (!a->vlayer) {
+        fprintf(stderr, "[vlayer] unavailable (Metal renderer required), using FFmpeg decode\n");
+        return 0;
+    }
+    tb_disp_set_external_video(a->disp, 1);
+    a->cursor_sprite_type = -1;
+    a->cursor_sprite_size = -1;
+    return 1;
+}
+
+/* V on the idle screen: switch between the video layer and the FFmpeg/OpenGL path. */
+static void tb_receiver_toggle_video_layer(struct app *a) {
+    if (a->vlayer) {
+        tb_vlayer_destroy(a->vlayer);
+        a->vlayer = NULL;
+        a->cursor_image_active = 0;
+        tb_disp_set_external_video(a->disp, 0);
+        (void)tb_disp_switch_renderer(a->disp, 0);
+        snprintf(a->video_layer_pref, sizeof(a->video_layer_pref), "%s", "off");
+    } else {
+        (void)tb_disp_switch_renderer(a->disp, 1);
+        if (tb_receiver_create_vlayer(a)) {
+            snprintf(a->video_layer_pref, sizeof(a->video_layer_pref), "%s", "on");
+            a->video_layer_failures = 0;
+        } else {
+            (void)tb_disp_switch_renderer(a->disp, 0);
+        }
+    }
+    tb_receiver_save_settings(a);
+}
+
+/* M on the idle screen: turn 10-bit (Main10) off, or back on, including
+ * after an automatic opt-out. Applies from the next connection. */
+static void tb_receiver_toggle_main10(struct app *a) {
+    const int effectively_on = strcmp(a->main10_pref, "on") == 0 && !a->main10_runtime_off;
+    snprintf(a->main10_pref, sizeof(a->main10_pref), "%s", effectively_on ? "off" : "on");
+    a->main10_runtime_off = 0;
+    tb_receiver_save_settings(a);
+}
+
+static void tb_receiver_refresh_footer(struct app *a) {
+    /* Hardware capability does not change while running; probe once. */
+    static int hevc_hw = -1;
+    if (hevc_hw < 0) hevc_hw = tb_dec_supports_hevc_hwdecode();
+    const char *output_key = a->vlayer ? "receiver.ui.output_layer"
+                           : (strcmp(a->video_layer_pref, "off") == 0 ? "receiver.ui.output_compat"
+                                                                     : "receiver.ui.output_compat_auto");
+    const char *tenbit_key;
+    if (!a->vlayer) {
+        tenbit_key = "receiver.ui.tenbit_needs_layer";
+    } else if (!(hevc_hw && tb_vlayer_supports_main10_hw())) {
+        tenbit_key = "receiver.ui.tenbit_unsupported";
+    } else if (strcmp(a->main10_pref, "auto-off") == 0 || a->main10_runtime_off) {
+        tenbit_key = "receiver.ui.tenbit_auto_off";
+    } else if (strcmp(a->main10_pref, "off") == 0) {
+        tenbit_key = "receiver.ui.tenbit_off";
+    } else {
+        tenbit_key = "receiver.ui.tenbit_on";
+    }
+    char note[768];
+    snprintf(note, sizeof(note), "%s\n%s", tb_i18n_get(output_key), tb_i18n_get(tenbit_key));
+    tb_disp_set_footer_note(a->disp, note);
 }
 
 static void close_client(struct app *a) {
@@ -2036,6 +2194,12 @@ static void close_client(struct app *a) {
     tb_parser_free(&a->parser);
     tb_parser_init(&a->parser, on_packet, a);
     tb_dec_reset(a->dec);   /* fresh decoder for next session */
+    if (a->vlayer && a->vlayer_session_frames >= 600 && a->video_layer_failures > 0) {
+        /* A healthy video-layer session clears earlier transient failures. */
+        a->video_layer_failures = 0;
+        tb_receiver_save_settings(a);
+    }
+    a->vlayer_session_frames = 0;
     tb_vlayer_reset(a->vlayer);
     a->cursor_image_active = 0;
     a->cursor_sprite_type = -1;
@@ -2162,17 +2326,13 @@ int main(int argc, char **argv) {
     tb_gesture_bridge_install(tb_receiver_space_switch_callback, &a);
     tb_gesture_bridge_set_active(0);
 
-    a.disp = tb_disp_create(fullscreen);
+    tb_receiver_load_video_settings(&a);
+    const int want_vlayer = tb_receiver_video_layer_wanted(&a);
+    a.disp = tb_disp_create(fullscreen, want_vlayer);
     if (!a.disp) { fprintf(stderr, "tb_disp_create failed\n"); return 1; }
-    if (tb_disp_video_layer_requested()) {
-        a.vlayer = tb_vlayer_create(tb_disp_cocoa_window(a.disp), tb_disp_metal_layer(a.disp));
-        if (a.vlayer) {
-            tb_disp_set_external_video(a.disp, 1);
-            a.cursor_sprite_type = -1;
-            a.cursor_sprite_size = -1;
-        } else {
-            fprintf(stderr, "[vlayer] unavailable (Metal renderer required), using FFmpeg decode\n");
-        }
+    if (want_vlayer && !tb_receiver_create_vlayer(&a)) {
+        /* The Metal-first renderer only helps the layer; go back to OpenGL. */
+        (void)tb_disp_switch_renderer(a.disp, 0);
     }
 
     /* SDL starts with screen-saver inhibition enabled. A Receiver that has not
@@ -2220,6 +2380,12 @@ int main(int argc, char **argv) {
         if (disp_actions & TB_DISP_ACTION_QUIT) break;
         if ((disp_actions & TB_DISP_ACTION_CYCLE_LANGUAGE) && a.client_fd < 0) {
             tb_receiver_cycle_language_preference(&a);
+        }
+        if ((disp_actions & TB_DISP_ACTION_TOGGLE_VIDEO_LAYER) && a.client_fd < 0) {
+            tb_receiver_toggle_video_layer(&a);
+        }
+        if ((disp_actions & TB_DISP_ACTION_TOGGLE_MAIN10) && a.client_fd < 0) {
+            tb_receiver_toggle_main10(&a);
         }
 
         uint64_t t = now_ms();
@@ -2351,6 +2517,7 @@ int main(int argc, char **argv) {
             /* No client, or a connection that hasn't started a real streaming
              * session (e.g. a transient UI-language push during discovery):
              * stay on the windowed waiting screen, don't flash fullscreen. */
+            tb_receiver_refresh_footer(&a);
             tb_disp_render_status(a.disp, a.display_host, a.status_text, a.sender_text, a.panel_text, a.mode_text, a.language_text, a.permissions_text);
         } else if (!a.have_video_frame) {
             tb_disp_render_connecting(a.disp);
