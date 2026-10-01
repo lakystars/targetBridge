@@ -57,6 +57,8 @@ with older Macs:
 See the [full 3.5.2 release notes](docs/releases/3.5.2.md), the
 [3.5.1 release notes](docs/releases/3.5.1.md), and the
 [testing guide](docs/Testing.md), including the new monitor-shield lifecycle test.
+[Fallbacks and switches](docs/Fallbacks.md) lists the automatic fallbacks and
+the settings and keys that override them.
 
 It also keeps the established multi-Mac workspace features:
 
