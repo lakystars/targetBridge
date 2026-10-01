@@ -23,6 +23,25 @@ final class TBVirtualDisplayModeMemory {
         var pixelWidth: Int
         var pixelHeight: Int
         var refreshRate: Double
+
+        init(pointWidth: Int, pointHeight: Int, pixelWidth: Int, pixelHeight: Int, refreshRate: Double) {
+            self.pointWidth = pointWidth
+            self.pointHeight = pointHeight
+            self.pixelWidth = pixelWidth
+            self.pixelHeight = pixelHeight
+            self.refreshRate = refreshRate
+        }
+
+        init(mode: CGDisplayMode) {
+            self.init(pointWidth: mode.width, pointHeight: mode.height,
+                      pixelWidth: mode.pixelWidth, pixelHeight: mode.pixelHeight,
+                      refreshRate: mode.refreshRate)
+        }
+
+        func matches(_ other: Choice) -> Bool {
+            pointWidth == other.pointWidth && pointHeight == other.pointHeight &&
+                pixelWidth == other.pixelWidth && pixelHeight == other.pixelHeight
+        }
     }
 
     static let shared = TBVirtualDisplayModeMemory()
@@ -30,6 +49,8 @@ final class TBVirtualDisplayModeMemory {
 
     private let defaultsPrefix = "tb.displayMode."
     private var tracked: [CGDirectDisplayID: String] = [:]
+    /// Mode the app itself applied; its reconfiguration event is not a user choice.
+    private var pendingApplied: [CGDirectDisplayID: Choice] = [:]
     private var registered = false
 
     private func defaultsKey(_ key: String) -> String { defaultsPrefix + key }
@@ -46,13 +67,15 @@ final class TBVirtualDisplayModeMemory {
 
     /// Begin remembering mode changes for `displayID` under `key`, so the user's
     /// subsequent manual resolution changes are persisted.
-    func track(displayID: CGDirectDisplayID, key: String) {
+    func track(displayID: CGDirectDisplayID, key: String, ignoringApplied applied: Choice? = nil) {
         ensureRegistered()
         tracked[displayID] = key
+        pendingApplied[displayID] = applied
     }
 
     func untrack(displayID: CGDirectDisplayID) {
         tracked.removeValue(forKey: displayID)
+        pendingApplied.removeValue(forKey: displayID)
     }
 
     private func ensureRegistered() {
@@ -66,13 +89,13 @@ final class TBVirtualDisplayModeMemory {
         guard flags.contains(.setModeFlag) else { return }
         guard let key = tracked[displayID] else { return }
         guard let mode = CGDisplayCopyDisplayMode(displayID) else { return }
-        let choice = Choice(
-            pointWidth: mode.width,
-            pointHeight: mode.height,
-            pixelWidth: mode.pixelWidth,
-            pixelHeight: mode.pixelHeight,
-            refreshRate: mode.refreshRate
-        )
+        let choice = Choice(mode: mode)
+        // Events for the app's own mode (possibly several) are not user choices;
+        // the first different mode ends that window.
+        if let applied = pendingApplied[displayID] {
+            if applied.matches(choice) { return }
+            pendingApplied.removeValue(forKey: displayID)
+        }
         if let data = try? JSONEncoder().encode(choice) {
             UserDefaults.standard.set(data, forKey: defaultsKey(key))
         }

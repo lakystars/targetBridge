@@ -16,6 +16,13 @@ struct TBVirtualDisplayModeSize: Equatable {
     var backingHeight: Int { height * 2 }
 }
 
+struct TBDisplayModeCandidate {
+    let width: Int
+    let height: Int
+    let pixelWidth: Int
+    let refreshRate: Double
+}
+
 struct TBVirtualDisplayIdentity {
     let productID: UInt32
     let serialNumber: UInt32
@@ -153,10 +160,11 @@ final class ReceiverBackedVirtualDisplaySession {
         let savedChoice = modeOverride == nil
             ? TBVirtualDisplayModeMemory.shared.load(forKey: preferenceKey)
             : nil
-        activatePreferredMode(for: display.displayID,
-                              mode: resolvedMode,
-                              refreshRate: preferredRefreshRate,
-                              savedChoice: savedChoice)
+        let appliedMode = activatePreferredMode(for: display.displayID,
+                                                mode: resolvedMode,
+                                                hiDPI: profile.hiDPI,
+                                                refreshRate: preferredRefreshRate,
+                                                savedChoice: savedChoice)
 
         virtualDisplay = display
         displayID = display.displayID
@@ -165,7 +173,8 @@ final class ReceiverBackedVirtualDisplaySession {
 
         // Remember any manual resolution change the user makes from now on, so it
         // sticks across reconnects for this receiver.
-        TBVirtualDisplayModeMemory.shared.track(displayID: display.displayID, key: preferenceKey)
+        TBVirtualDisplayModeMemory.shared.track(displayID: display.displayID, key: preferenceKey,
+                                                ignoringApplied: appliedMode)
         return true
     }
 
@@ -179,27 +188,30 @@ final class ReceiverBackedVirtualDisplaySession {
         identityDescription = ""
     }
 
+    /// Applies the saved or preferred mode and returns it, so the mode memory can
+    /// tell this programmatic change apart from a user's manual pick.
     @discardableResult
     private func activatePreferredMode(for displayID: CGDirectDisplayID,
                                        mode: TBVirtualDisplayModeSize,
+                                       hiDPI: Bool,
                                        refreshRate: Double,
-                                       savedChoice: TBVirtualDisplayModeMemory.Choice?) -> Bool {
+                                       savedChoice: TBVirtualDisplayModeMemory.Choice?) -> TBVirtualDisplayModeMemory.Choice? {
         let timeout = Date().addingTimeInterval(2.0)
         while Date() < timeout {
-            var success = false
+            var applied: TBVirtualDisplayModeMemory.Choice?
             autoreleasepool {
                 let chosenMode = savedChoice.flatMap { savedMode(for: displayID, choice: $0) }
-                    ?? preferredMode(for: displayID, mode: mode, refreshRate: refreshRate)
-                if let chosenMode {
-                    success = CGDisplaySetDisplayMode(displayID, chosenMode, nil) == .success
+                    ?? preferredMode(for: displayID, mode: mode, hiDPI: hiDPI, refreshRate: refreshRate)
+                if let chosenMode, CGDisplaySetDisplayMode(displayID, chosenMode, nil) == .success {
+                    applied = TBVirtualDisplayModeMemory.Choice(mode: chosenMode)
                 }
             }
-            if success {
-                return true
+            if let applied {
+                return applied
             }
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
         }
-        return false
+        return nil
     }
 
     /// Find the display mode matching a saved choice. Matches on pixel size as
@@ -223,20 +235,41 @@ final class ReceiverBackedVirtualDisplaySession {
         return candidates.first
     }
 
-    private func preferredMode(for displayID: CGDirectDisplayID, mode: TBVirtualDisplayModeSize, refreshRate: Double) -> CGDisplayMode? {
-        guard let modesCF = CGDisplayCopyAllDisplayModes(displayID, nil) else {
+    private func preferredMode(for displayID: CGDirectDisplayID,
+                               mode: TBVirtualDisplayModeSize,
+                               hiDPI: Bool,
+                               refreshRate: Double) -> CGDisplayMode? {
+        // Without the duplicates option macOS lists only the 1x ("low resolution")
+        // variant of a HiDPI point size, so the 2x backing mode is never chosen.
+        let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modesCF = CGDisplayCopyAllDisplayModes(displayID, options) else {
             return nil
         }
         let modes = modesCF as? [CGDisplayMode] ?? []
-
-        let matchingModes = modes.filter { candidate in
-            candidate.width == mode.width && candidate.height == mode.height
-        }.sorted { $0.refreshRate > $1.refreshRate }
-
-        if let exactMatch = matchingModes.first(where: { abs($0.refreshRate - refreshRate) < 0.5 }) {
-            return exactMatch
+        let candidates = modes.map {
+            TBDisplayModeCandidate(width: $0.width, height: $0.height,
+                                   pixelWidth: $0.pixelWidth, refreshRate: $0.refreshRate)
         }
+        return Self.preferredCandidateIndex(candidates, mode: mode, hiDPI: hiDPI, refreshRate: refreshRate)
+            .map { modes[$0] }
+    }
 
-        return matchingModes.first
+    /// Picks the mode at the requested point size, preferring the 2x backing
+    /// variant for HiDPI, then the requested refresh rate, then the fastest.
+    nonisolated static func preferredCandidateIndex(_ candidates: [TBDisplayModeCandidate],
+                                                    mode: TBVirtualDisplayModeSize,
+                                                    hiDPI: Bool,
+                                                    refreshRate: Double) -> Int? {
+        let wantedPixelWidth = hiDPI ? mode.backingWidth : mode.width
+        let matching = candidates.indices.filter {
+            candidates[$0].width == mode.width && candidates[$0].height == mode.height
+        }
+        func rank(_ index: Int) -> (Int, Int, Double) {
+            let candidate = candidates[index]
+            return (candidate.pixelWidth == wantedPixelWidth ? 0 : 1,
+                    abs(candidate.refreshRate - refreshRate) < 0.5 ? 0 : 1,
+                    -candidate.refreshRate)
+        }
+        return matching.min { rank($0) < rank($1) }
     }
 }
