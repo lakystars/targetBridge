@@ -339,6 +339,14 @@ static int avcc_to_annexb(struct tb_decoder *d,
     return 0;
 }
 
+#if defined(__APPLE__)
+static int tb_dec_is_nv12_buffer(CVPixelBufferRef pb) {
+    OSType fmt = CVPixelBufferGetPixelFormatType(pb);
+    return fmt == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ||
+           fmt == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
+}
+#endif
+
 int tb_dec_feed_frame(struct tb_decoder *d, const uint8_t *avcc, size_t len) {
     if (!d->opened) return -1;
 
@@ -366,7 +374,9 @@ int tb_dec_feed_frame(struct tb_decoder *d, const uint8_t *avcc, size_t len) {
          * access to the IOSurface-backed NV12 planes without the
          * GPU→staging→CPU copy that av_hwframe_transfer_data performs.
          * Major win on Intel iMac + Radeon (~6× faster in practice). */
-        if (d->hw_frame->format == d->hw_pix_fmt && d->hw_frame->data[3]) {
+        /* 10-bit (P010) output takes the generic path and is converted to NV12. */
+        if (d->hw_frame->format == d->hw_pix_fmt && d->hw_frame->data[3] &&
+            tb_dec_is_nv12_buffer((CVPixelBufferRef)d->hw_frame->data[3])) {
             CVPixelBufferRef pb = (CVPixelBufferRef)d->hw_frame->data[3];
             if (CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly) == 0) {
                 uint8_t *y   = (uint8_t *)CVPixelBufferGetBaseAddressOfPlane(pb, 0);
@@ -386,7 +396,7 @@ int tb_dec_feed_frame(struct tb_decoder *d, const uint8_t *avcc, size_t len) {
         /* Generic path: HW transfer (Linux VAAPI / Windows D3D11VA / SW). */
         AVFrame *out = d->hw_frame;
         if (d->hw_frame->format == d->hw_pix_fmt) {
-            d->sw_frame->format = AV_PIX_FMT_NV12;
+            /* Leave the format unset so the decoder's native format (NV12/P010) is transferred. */
             if (av_hwframe_transfer_data(d->sw_frame, d->hw_frame, 0) < 0) {
                 fprintf(stderr, "[dec] hwframe_transfer failed\n");
                 av_frame_unref(d->hw_frame);

@@ -42,6 +42,26 @@ int                tb_disp_window_on_active_space(struct tb_display *d);
 /* Resize/recreate texture when frame dimensions change. */
 int  tb_disp_ensure_texture(struct tb_display *d, int w, int h);
 
+/* External video layer integration (tb_video_layer). */
+int   tb_disp_video_layer_requested(void);
+void *tb_disp_cocoa_window(struct tb_display *d);
+void *tb_disp_metal_layer(struct tb_display *d);
+void  tb_disp_set_external_video(struct tb_display *d, int active);
+void  tb_disp_present_external_frame(struct tb_display *d);
+
+struct tb_cursor_state {
+    int    visible;
+    double x_norm;
+    double y_norm;
+    int    type;
+    int    size;
+};
+/* Returns 1 and fills out when the cursor changed in external video mode. */
+int  tb_disp_take_cursor_update(struct tb_display *d, struct tb_cursor_state *out);
+/* Renders a premultiplied ARGB cursor sprite; caller frees pixels. */
+int  tb_disp_render_cursor_sprite(struct tb_display *d, int type, int size,
+                                  uint8_t **pixels, int *dim, int *hotspot);
+
 /* Upload NV12 planes + render. Called once per decoded frame. */
 void tb_disp_render_nv12(struct tb_display *d,
                          const uint8_t *y, int y_stride,

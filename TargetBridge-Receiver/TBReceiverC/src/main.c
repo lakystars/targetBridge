@@ -22,6 +22,7 @@
 #include "tb_gesture_bridge.h"
 #include "tb_display_tweaks.h"
 #include "tb_i18n.h"
+#include "tb_video_layer.h"
 
 #include <SDL.h>
 #include <ApplicationServices/ApplicationServices.h>
@@ -66,6 +67,20 @@ struct app {
     uint64_t frames;
     uint64_t last_fps_tick_ms;
     uint64_t last_fps_count;
+    /* System decoder + layer output; NULL means the FFmpeg path. */
+    struct tb_video_layer *vlayer;
+    int      cursor_sprite_type;
+    int      cursor_sprite_size;
+    /* Per-second stage timings, enabled with TB_RECEIVER_TIMING=1. */
+    int      timing_enabled;
+    uint64_t timing_bytes;
+    uint64_t timing_packets;
+    uint64_t timing_decode_us;
+    uint64_t timing_decode_max_us;
+    uint64_t timing_render_us;
+    uint64_t timing_render_max_us;
+    uint64_t timing_drain_max_us;
+    uint64_t timing_loop_gap_max_us;
     uint64_t last_ip_check_ms;
     /* Last display-tweak state reported to the sender, so changes made on this
      * Mac (Control Center, System Settings) propagate back and the sender's
@@ -172,6 +187,12 @@ static uint64_t now_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
+}
+
+static uint64_t now_us(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000ULL;
 }
 
 static void tb_copy_i18n(char *dest, size_t size, const char *key);
@@ -897,10 +918,19 @@ static void tb_receiver_apply_input_control_mode(struct app *a, const uint8_t *p
 
 /* ---- Callbacks: decoder → display ------------------------------------ */
 
-static void on_frame(const uint8_t *y, int y_stride,
-                     const uint8_t *uv, int uv_stride,
-                     int w, int h, void *ud) {
-    struct app *a = (struct app *)ud;
+/* Drop the video layer and continue on the FFmpeg + SDL texture path. */
+static void tb_receiver_disable_vlayer(struct app *a, const char *reason, int renegotiate) {
+    if (!a->vlayer) return;
+    fprintf(stderr, "[vlayer] disabled (%s), falling back to FFmpeg decode\n", reason);
+    tb_vlayer_destroy(a->vlayer);
+    a->vlayer = NULL;
+    tb_disp_set_external_video(a->disp, 0);
+    /* The sender picked codec settings (e.g. Main10) for the layer; drop the
+     * session so the next connection negotiates against the FFmpeg path. */
+    if (renegotiate) a->close_requested = 1;
+}
+
+static void tb_mark_video_frame(struct app *a, int w, int h) {
     a->have_video_frame = 1;
     tb_copy_i18n(a->status_text, sizeof(a->status_text), "receiver.status.stream_active");
     {
@@ -914,7 +944,20 @@ static void on_frame(const uint8_t *y, int y_stride,
         snprintf(height_text, sizeof(height_text), "%d", h);
         tb_format_i18n(a->mode_text, sizeof(a->mode_text), "receiver.mode.receiving", pairs, 2);
     }
+}
+
+static void on_frame(const uint8_t *y, int y_stride,
+                     const uint8_t *uv, int uv_stride,
+                     int w, int h, void *ud) {
+    struct app *a = (struct app *)ud;
+    tb_mark_video_frame(a, w, h);
+    uint64_t render_start = a->timing_enabled ? now_us() : 0;
     tb_disp_render_nv12(a->disp, y, y_stride, uv, uv_stride, w, h);
+    if (a->timing_enabled) {
+        uint64_t dt = now_us() - render_start;
+        a->timing_render_us += dt;
+        if (dt > a->timing_render_max_us) a->timing_render_max_us = dt;
+    }
     a->frames++;
 }
 
@@ -1152,13 +1195,46 @@ static void on_packet(uint8_t type, const uint8_t *payload, size_t len, void *ud
         /* tb_dec_set_param_sets is now a no-op if the sets are unchanged,
          * so we don't spam a log line per keyframe. */
         tb_dec_set_param_sets(a->dec, payload, len);
+        if (a->vlayer && tb_vlayer_set_param_sets(a->vlayer, payload, len) < 0 &&
+            !tb_vlayer_has_format(a->vlayer)) {
+            tb_receiver_disable_vlayer(a, "unsupported parameter sets", 1);
+        }
         break;
     case TB_PKT_FRAME:
         a->session_active = 1;
-        tb_dec_feed_frame(a->dec, payload, len);
+        if (a->vlayer) {
+            int r = tb_vlayer_enqueue(a->vlayer, payload, len);
+            if (r > 0) {
+                int w = 0, h = 0;
+                tb_vlayer_get_size(a->vlayer, &w, &h);
+                tb_mark_video_frame(a, w, h);
+                tb_vlayer_set_visible(a->vlayer, 1);
+                tb_disp_present_external_frame(a->disp);
+                a->frames++;
+                a->timing_packets++;
+                break;
+            }
+            if (r == 0) break;
+            /* Only a Main10 stream needs renegotiation; 8-bit streams continue on FFmpeg. */
+            tb_receiver_disable_vlayer(a, "layer failed", tb_vlayer_is_main10(a->vlayer));
+        }
+        if (a->timing_enabled) {
+            /* on_frame renders inside the decode call; subtract that render time. */
+            uint64_t render_before = a->timing_render_us;
+            uint64_t decode_start = now_us();
+            tb_dec_feed_frame(a->dec, payload, len);
+            uint64_t dt = now_us() - decode_start - (a->timing_render_us - render_before);
+            a->timing_decode_us += dt;
+            if (dt > a->timing_decode_max_us) a->timing_decode_max_us = dt;
+            a->timing_packets++;
+        } else {
+            tb_dec_feed_frame(a->dec, payload, len);
+        }
         break;
     case TB_PKT_RAW_FRAME:
         a->session_active = 1;
+        /* RAW frames are only rendered through the SDL texture path. */
+        tb_receiver_disable_vlayer(a, "raw frames", 0);
         handle_raw_frame(a, payload, len);
         break;
     case TB_PKT_CURSOR:
@@ -1281,6 +1357,7 @@ static int drain_socket(struct app *a) {
         ssize_t n = read(a->client_fd, buf, sizeof(buf));
         if (n > 0) {
             saw_data = 1;
+            a->timing_bytes += (uint64_t)n;
             if (tb_parser_feed(&a->parser, buf, (size_t)n) < 0) return -1;
         } else if (n == 0) {
             return -1;  /* peer closed */
@@ -1828,7 +1905,8 @@ static void send_receiver_info(struct app *a) {
         "{\"receiverName\":\"%s\",\"panelWidth\":%u,\"panelHeight\":%u,"
         "\"modeWidth\":%u,\"modeHeight\":%u,\"refreshRate\":60,"
         "\"hiDPI\":%s,\"captureWidth\":%u,\"captureHeight\":%u,"
-        "\"supportsHEVCDecode\":%s,\"supportsRawNV12\":true,\"inputMonitoringTrusted\":%s,\"accessibilityTrusted\":%s,"
+        "\"supportsHEVCDecode\":%s,\"supportsRawNV12\":true,\"supportsHEVCMain10\":%s,"
+        "\"inputMonitoringTrusted\":%s,\"accessibilityTrusted\":%s,"
         "\"supportsNightShift\":%s,\"supportsTrueTone\":%s}",
         escaped_name,
         profile.panel_w,
@@ -1839,6 +1917,9 @@ static void send_receiver_info(struct app *a) {
         profile.capture_w,
         profile.capture_h,
         tb_dec_supports_hevc_hwdecode() ? "true" : "false",
+        /* The FFmpeg path assumes 8-bit NV12; Main10 needs the video layer
+         * and a hardware Main10 decoder. */
+        (a->vlayer && tb_dec_supports_hevc_hwdecode() && tb_vlayer_supports_main10_hw()) ? "true" : "false",
         tb_receiver_input_monitoring_trusted() ? "true" : "false",
         tb_receiver_accessibility_trusted() ? "true" : "false",
         tb_night_shift_supported() ? "true" : "false",
@@ -1862,6 +1943,27 @@ static void send_receiver_info(struct app *a) {
     free(pkt);
 }
 
+/* Apply cursor changes to the cursor layer, at most once per loop. */
+static void tb_receiver_sync_cursor(struct app *a) {
+    if (!a->vlayer) return;
+    struct tb_cursor_state cs;
+    if (!tb_disp_take_cursor_update(a->disp, &cs)) {
+        tb_vlayer_refresh_cursor(a->vlayer);
+        return;
+    }
+    if (cs.type != a->cursor_sprite_type || cs.size != a->cursor_sprite_size) {
+        uint8_t *pixels = NULL;
+        int dim = 0, hotspot = 0;
+        if (tb_disp_render_cursor_sprite(a->disp, cs.type, cs.size, &pixels, &dim, &hotspot) == 0) {
+            tb_vlayer_set_cursor_image(a->vlayer, pixels, dim, hotspot);
+            free(pixels);
+            a->cursor_sprite_type = cs.type;
+            a->cursor_sprite_size = cs.size;
+        }
+    }
+    tb_vlayer_set_cursor(a->vlayer, cs.x_norm, cs.y_norm, cs.visible);
+}
+
 static void close_client(struct app *a) {
     if (a->client_fd >= 0) close(a->client_fd);
     a->client_fd = -1;
@@ -1878,6 +1980,7 @@ static void close_client(struct app *a) {
     tb_parser_free(&a->parser);
     tb_parser_init(&a->parser, on_packet, a);
     tb_dec_reset(a->dec);   /* fresh decoder for next session */
+    tb_vlayer_reset(a->vlayer);
     tb_audio_close_for_idle(a);
     fprintf(stderr, "[main] client disconnected\n");
 }
@@ -1997,6 +2100,16 @@ int main(int argc, char **argv) {
 
     a.disp = tb_disp_create(fullscreen);
     if (!a.disp) { fprintf(stderr, "tb_disp_create failed\n"); return 1; }
+    if (tb_disp_video_layer_requested()) {
+        a.vlayer = tb_vlayer_create(tb_disp_cocoa_window(a.disp), tb_disp_metal_layer(a.disp));
+        if (a.vlayer) {
+            tb_disp_set_external_video(a.disp, 1);
+            a.cursor_sprite_type = -1;
+            a.cursor_sprite_size = -1;
+        } else {
+            fprintf(stderr, "[vlayer] unavailable (Metal renderer required), using FFmpeg decode\n");
+        }
+    }
 
     /* SDL starts with screen-saver inhibition enabled. A Receiver that has not
      * accepted a client yet never reaches close_client(), so release the
@@ -2022,9 +2135,20 @@ int main(int argc, char **argv) {
     if (a.server_fd < 0) { fprintf(stderr, "tb_net_listen failed\n"); return 1; }
 
     a.last_fps_tick_ms = now_ms();
+    {
+        const char *timing = getenv("TB_RECEIVER_TIMING");
+        a.timing_enabled = timing && timing[0] == '1';
+    }
+    uint64_t timing_last_loop_us = now_us();
     a.last_ip_check_ms = 0;
 
     while (!g_term) {
+        if (a.timing_enabled) {
+            uint64_t loop_now = now_us();
+            uint64_t gap = loop_now - timing_last_loop_us;
+            if (gap > a.timing_loop_gap_max_us) a.timing_loop_gap_max_us = gap;
+            timing_last_loop_us = loop_now;
+        }
         unsigned int disp_actions = tb_disp_poll_actions(a.disp);
         int socket_activity = 0;
         CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, true);
@@ -2104,7 +2228,12 @@ int main(int argc, char **argv) {
                 send_receiver_info(&a);
             }
         } else {
+            uint64_t drain_start = a.timing_enabled ? now_us() : 0;
             int drain_result = drain_socket(&a);
+            if (a.timing_enabled) {
+                uint64_t dt = now_us() - drain_start;
+                if (dt > a.timing_drain_max_us) a.timing_drain_max_us = dt;
+            }
             if (drain_result < 0) {
                 close_client(&a);
             } else {
@@ -2139,6 +2268,8 @@ int main(int argc, char **argv) {
                 }
             }
         }
+
+        tb_receiver_sync_cursor(&a);
 
         if (t - a.last_permissions_poll_ms >= 250) {
             a.last_permissions_poll_ms = t;
@@ -2231,10 +2362,39 @@ int main(int argc, char **argv) {
 
         /* FPS log */
         if (t - a.last_fps_tick_ms >= 1000) {
+            const double elapsed_s = (double)(t - a.last_fps_tick_ms) / 1000.0;
             uint64_t df = a.frames - a.last_fps_count;
             a.last_fps_count   = a.frames;
             a.last_fps_tick_ms = t;
             if (df > 0) fprintf(stderr, "[main] %llu fps\n", (unsigned long long)df);
+            if (a.timing_enabled && a.client_fd >= 0) {
+                fprintf(stderr,
+                        "[timing] fps=%llu rx=%.1fMbps pkts=%llu dec_avg=%.2fms dec_max=%.2fms "
+                        "ren_avg=%.2fms ren_max=%.2fms drain_max=%.1fms loop_gap_max=%.1fms\n",
+                        (unsigned long long)df,
+                        (double)a.timing_bytes * 8.0 / 1e6 / elapsed_s,
+                        (unsigned long long)a.timing_packets,
+                        a.timing_packets ? (double)a.timing_decode_us / a.timing_packets / 1000.0 : 0.0,
+                        (double)a.timing_decode_max_us / 1000.0,
+                        df ? (double)a.timing_render_us / df / 1000.0 : 0.0,
+                        (double)a.timing_render_max_us / 1000.0,
+                        (double)a.timing_drain_max_us / 1000.0,
+                        (double)a.timing_loop_gap_max_us / 1000.0);
+            }
+            if (a.timing_enabled && a.vlayer && a.client_fd >= 0) {
+                struct tb_video_layer_stats vs;
+                tb_vlayer_take_stats(a.vlayer, &vs);
+                fprintf(stderr,
+                        "[timing] vlayer enqueued=%llu drop_not_ready=%llu drop_wait_key=%llu flushes=%llu\n",
+                        (unsigned long long)vs.enqueued,
+                        (unsigned long long)vs.dropped_not_ready,
+                        (unsigned long long)vs.dropped_wait_key,
+                        (unsigned long long)vs.flushes);
+            }
+            a.timing_bytes = a.timing_packets = 0;
+            a.timing_decode_us = a.timing_decode_max_us = 0;
+            a.timing_render_us = a.timing_render_max_us = 0;
+            a.timing_drain_max_us = a.timing_loop_gap_max_us = 0;
         }
 
         /* Yield when idle or when a nonblocking active socket had no data,
@@ -2250,6 +2410,7 @@ int main(int argc, char **argv) {
     bonjour_deinit(&a);
     tb_parser_free(&a.parser);
     tb_dec_destroy(a.dec);
+    tb_vlayer_destroy(a.vlayer);
     tb_audio_close_for_idle(&a);
     tb_disp_destroy(a.disp);
     fprintf(stderr, "[main] bye\n");

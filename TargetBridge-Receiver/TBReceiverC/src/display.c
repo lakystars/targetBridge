@@ -1,7 +1,8 @@
 /* display.c — SDL2 NV12 renderer.
  *
- * On macOS we allow renderer selection/override, but keep OpenGL as the
- * default safe backend because Metal can flicker on some Tahoe-era systems.
+ * With the video layer (tb_video_layer) SDL only draws status screens and
+ * prefers Metal. The FFmpeg path (TB_RECEIVER_VIDEO_LAYER=0) prefers OpenGL
+ * because Metal can flicker on some Tahoe-era systems.
  * SDL_PIXELFORMAT_NV12 + SDL_UpdateNVTexture lets us upload YUV planes
  * directly to GPU; the shader does YUV→RGB conversion on the GPU.
  */
@@ -14,6 +15,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreText/CoreText.h>
 #include <SDL.h>
+#include <SDL_syswm.h>
 #include <dlfcn.h>
 
 #include <stdio.h>
@@ -52,6 +54,10 @@ struct tb_display {
     int           cursor_large;
     uint32_t      last_video_frame_time;
     int           system_cursor_hidden;
+    /* Video and cursor are drawn by Core Animation layers outside SDL. */
+    int           external_video;
+    int           cursor_dirty;
+    int           cursor_out_w;
 
     char          last_ip[64];
     char          last_status[128];
@@ -533,6 +539,12 @@ static SDL_Renderer *tb_disp_try_renderer(SDL_Window *win, const char *driver) {
     return ren;
 }
 
+int tb_disp_video_layer_requested(void) {
+    /* On by default; TB_RECEIVER_VIDEO_LAYER=0 selects the FFmpeg + SDL texture path. */
+    const char *value = getenv("TB_RECEIVER_VIDEO_LAYER");
+    return !(value && value[0] == '0');
+}
+
 static SDL_Renderer *tb_disp_create_accelerated_renderer(SDL_Window *win) {
     const char *forced_driver = getenv("TB_RECEIVER_RENDER_DRIVER");
     if (forced_driver && forced_driver[0] != '\0') {
@@ -541,7 +553,11 @@ static SDL_Renderer *tb_disp_create_accelerated_renderer(SDL_Window *win) {
     }
 
 #if defined(__APPLE__)
-    const char *macos_drivers[] = { "opengl", "metal", NULL };
+    /* With the video layer SDL only renders status screens, so prefer Metal. */
+    const int prefer_metal = tb_disp_video_layer_requested();
+    const char *opengl_first[] = { "opengl", "metal", NULL };
+    const char *metal_first[] = { "metal", "opengl", NULL };
+    const char **macos_drivers = prefer_metal ? metal_first : opengl_first;
     for (int i = 0; macos_drivers[i] != NULL; i++) {
         SDL_Renderer *ren = tb_disp_try_renderer(win, macos_drivers[i]);
         if (ren) return ren;
@@ -732,6 +748,12 @@ static void draw_scaled_rect(SDL_Renderer *ren, int cx, int cy, int size, int rx
     SDL_RenderFillRect(ren, &r);
 }
 
+static int tb_disp_cursor_size(int large, int out_w) {
+    return large ? (out_w >= 5000 ? 58 : 44) : (out_w >= 5000 ? 32 : 24);
+}
+
+static void tb_disp_draw_cursor_shape(struct tb_display *d, int x, int y, int size);
+
 static void tb_disp_draw_cursor(struct tb_display *d) {
     if (!d || !d->cursor_visible || d->cursor_source_w <= 0 || d->cursor_source_h <= 0) return;
 
@@ -744,9 +766,10 @@ static void tb_disp_draw_cursor(struct tb_display *d) {
     const double sy = (double)out_h / (double)d->cursor_source_h;
     const int x = (int)((double)d->cursor_x * sx);
     const int y = (int)((double)d->cursor_y * sy);
-    const int size = d->cursor_large
-        ? (out_w >= 5000 ? 58 : 44)
-        : (out_w >= 5000 ? 32 : 24);
+    tb_disp_draw_cursor_shape(d, x, y, tb_disp_cursor_size(d->cursor_large, out_w));
+}
+
+static void tb_disp_draw_cursor_shape(struct tb_display *d, int x, int y, int size) {
     SDL_BlendMode old_blend = SDL_BLENDMODE_NONE;
     (void)SDL_GetRenderDrawBlendMode(d->ren, &old_blend);
 
@@ -1115,7 +1138,8 @@ static void tb_disp_draw_cursor(struct tb_display *d) {
 }
 
 static void tb_disp_render_current(struct tb_display *d) {
-    if (!d || !d->tex) return;
+    if (!d || d->external_video || !d->tex) return;
+    SDL_SetRenderDrawColor(d->ren, 0, 0, 0, 255);
     SDL_RenderClear(d->ren);
     SDL_RenderCopy(d->ren, d->tex, NULL, NULL);
     tb_disp_draw_cursor(d);
@@ -1155,11 +1179,97 @@ void tb_disp_set_cursor(struct tb_display *d,
     d->cursor_large = large;
 
     uint32_t now = SDL_GetTicks();
+    if (d->external_video) {
+        /* The main loop applies this as a layer move (tb_receiver_sync_cursor). */
+        d->cursor_dirty = 1;
+        return;
+    }
     if (now - d->last_video_frame_time > 40) {
         if (d->is_connected && d->tex) {
             tb_disp_render_current(d);
         }
     }
+}
+
+void *tb_disp_cocoa_window(struct tb_display *d) {
+    if (!d || !d->win) return NULL;
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(d->win, &info) || info.subsystem != SDL_SYSWM_COCOA) return NULL;
+    return (void *)info.info.cocoa.window;
+}
+
+void *tb_disp_metal_layer(struct tb_display *d) {
+    if (!d || !d->ren) return NULL;
+    return SDL_RenderGetMetalLayer(d->ren);
+}
+
+void tb_disp_set_external_video(struct tb_display *d, int active) {
+    if (!d) return;
+    d->external_video = active ? 1 : 0;
+}
+
+void tb_disp_present_external_frame(struct tb_display *d) {
+    if (!d) return;
+    tb_disp_set_connection_state(d, 1);
+    d->last_video_frame_time = SDL_GetTicks();
+}
+
+int tb_disp_take_cursor_update(struct tb_display *d, struct tb_cursor_state *out) {
+    if (!d || !out) return 0;
+    int out_w = 0, out_h = 0;
+    if (SDL_GetRendererOutputSize(d->ren, &out_w, &out_h) < 0) out_w = 0;
+    /* Output size changes on fullscreen transitions; resize the sprite. */
+    if (out_w != d->cursor_out_w) {
+        d->cursor_out_w = out_w;
+        d->cursor_dirty = 1;
+    }
+    if (!d->cursor_dirty) return 0;
+    d->cursor_dirty = 0;
+    out->visible = d->cursor_visible;
+    out->x_norm = (double)d->cursor_x / (double)(d->cursor_source_w > 0 ? d->cursor_source_w : 1);
+    out->y_norm = (double)d->cursor_y / (double)(d->cursor_source_h > 0 ? d->cursor_source_h : 1);
+    out->type = d->cursor_type;
+    out->size = tb_disp_cursor_size(d->cursor_large, out_w);
+    return 1;
+}
+
+int tb_disp_render_cursor_sprite(struct tb_display *d, int type, int size,
+                                 uint8_t **pixels, int *dim, int *hotspot) {
+    if (!d || !pixels || !dim || !hotspot || size <= 0) return -1;
+    /* Shapes span -size..2*size around the hotspot, placed at (size, size). */
+    const int canvas = size * 3;
+    SDL_Texture *target = SDL_CreateTexture(d->ren, SDL_PIXELFORMAT_ARGB8888,
+                                            SDL_TEXTUREACCESS_TARGET, canvas, canvas);
+    if (!target) return -1;
+    uint8_t *buf = (uint8_t *)malloc((size_t)canvas * (size_t)canvas * 4);
+    if (!buf) {
+        SDL_DestroyTexture(target);
+        return -1;
+    }
+
+    SDL_Texture *previous = SDL_GetRenderTarget(d->ren);
+    const int saved_type = d->cursor_type;
+    int result = -1;
+    if (SDL_SetRenderTarget(d->ren, target) == 0) {
+        SDL_SetRenderDrawColor(d->ren, 0, 0, 0, 0);
+        SDL_RenderClear(d->ren);
+        d->cursor_type = type;
+        tb_disp_draw_cursor_shape(d, size, size, size);
+        d->cursor_type = saved_type;
+        result = SDL_RenderReadPixels(d->ren, NULL, SDL_PIXELFORMAT_ARGB8888, buf, canvas * 4);
+    }
+    SDL_SetRenderTarget(d->ren, previous);
+    SDL_DestroyTexture(target);
+    if (result != 0) {
+        fprintf(stderr, "[disp] cursor sprite render failed: %s\n", SDL_GetError());
+        free(buf);
+        return -1;
+    }
+    *pixels = buf;
+    *dim = canvas;
+    *hotspot = size;
+    return 0;
 }
 
 unsigned int tb_disp_poll_actions(struct tb_display *d) {
@@ -1459,6 +1569,7 @@ void tb_disp_render_status(struct tb_display *d,
     snprintf(title, sizeof(title), "TBDisplayReceiverC %s — %s — %s", TB_RECEIVER_VERSION, ip, status);
     SDL_SetWindowTitle(d->win, title);
 
+    SDL_SetRenderDrawColor(d->ren, 0, 0, 0, 255);
     SDL_RenderClear(d->ren);
     if (d->status_tex) SDL_RenderCopy(d->ren, d->status_tex, NULL, NULL);
     SDL_RenderPresent(d->ren);
@@ -1489,6 +1600,7 @@ void tb_disp_render_connecting(struct tb_display *d) {
     }
 
     SDL_SetWindowTitle(d->win, "TargetBridge Receiver — Connecting");
+    SDL_SetRenderDrawColor(d->ren, 0, 0, 0, 255);
     SDL_RenderClear(d->ren);
     if (d->status_tex) SDL_RenderCopy(d->ren, d->status_tex, NULL, NULL);
     tb_disp_draw_connecting_spinner(d, drawable_w, drawable_h);
