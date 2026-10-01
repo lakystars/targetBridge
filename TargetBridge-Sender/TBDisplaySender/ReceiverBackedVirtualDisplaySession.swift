@@ -156,6 +156,7 @@ final class ReceiverBackedVirtualDisplaySession {
         activatePreferredMode(for: display.displayID,
                               mode: resolvedMode,
                               refreshRate: preferredRefreshRate,
+                              hiDPI: profile.hiDPI,
                               savedChoice: savedChoice)
 
         virtualDisplay = display
@@ -183,13 +184,14 @@ final class ReceiverBackedVirtualDisplaySession {
     private func activatePreferredMode(for displayID: CGDirectDisplayID,
                                        mode: TBVirtualDisplayModeSize,
                                        refreshRate: Double,
+                                       hiDPI: Bool,
                                        savedChoice: TBVirtualDisplayModeMemory.Choice?) -> Bool {
         let timeout = Date().addingTimeInterval(2.0)
         while Date() < timeout {
             var success = false
             autoreleasepool {
                 let chosenMode = savedChoice.flatMap { savedMode(for: displayID, choice: $0) }
-                    ?? preferredMode(for: displayID, mode: mode, refreshRate: refreshRate)
+                    ?? preferredMode(for: displayID, mode: mode, refreshRate: refreshRate, hiDPI: hiDPI)
                 if let chosenMode {
                     success = CGDisplaySetDisplayMode(displayID, chosenMode, nil) == .success
                 }
@@ -223,8 +225,16 @@ final class ReceiverBackedVirtualDisplaySession {
         return candidates.first
     }
 
-    private func preferredMode(for displayID: CGDirectDisplayID, mode: TBVirtualDisplayModeSize, refreshRate: Double) -> CGDisplayMode? {
-        guard let modesCF = CGDisplayCopyAllDisplayModes(displayID, nil) else {
+    /// Select the mode by its backing pixels as well as its logical size. A
+    /// virtual HiDPI display exposes both a Retina 2x and a low-resolution 1x
+    /// variant that can report the same logical 2560x1440 size. Choosing only
+    /// by points made Render Matching restore the blurry 1x variant.
+    private func preferredMode(for displayID: CGDirectDisplayID,
+                               mode: TBVirtualDisplayModeSize,
+                               refreshRate: Double,
+                               hiDPI: Bool) -> CGDisplayMode? {
+        let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modesCF = CGDisplayCopyAllDisplayModes(displayID, options) else {
             return nil
         }
         let modes = modesCF as? [CGDisplayMode] ?? []
@@ -233,10 +243,16 @@ final class ReceiverBackedVirtualDisplaySession {
             candidate.width == mode.width && candidate.height == mode.height
         }.sorted { $0.refreshRate > $1.refreshRate }
 
-        if let exactMatch = matchingModes.first(where: { abs($0.refreshRate - refreshRate) < 0.5 }) {
+        let expectedPixelWidth = hiDPI ? mode.backingWidth : mode.width
+        let expectedPixelHeight = hiDPI ? mode.backingHeight : mode.height
+        let backingMatches = matchingModes.filter { candidate in
+            candidate.pixelWidth == expectedPixelWidth && candidate.pixelHeight == expectedPixelHeight
+        }
+
+        if let exactMatch = backingMatches.first(where: { abs($0.refreshRate - refreshRate) < 0.5 }) {
             return exactMatch
         }
 
-        return matchingModes.first
+        return backingMatches.first ?? matchingModes.first
     }
 }
