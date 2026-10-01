@@ -212,7 +212,7 @@ static void tb_set_receiver_mode_requested(char *dest,
                                            const char *codec);
 static void tb_refresh_idle_localized_strings(struct app *a);
 static void tb_receiver_load_language_preference(char *dest, size_t size);
-static void tb_receiver_save_language_preference(const char *language_pref);
+static void tb_receiver_save_settings(const char *language_pref, const char *sender_language);
 static void tb_receiver_apply_language_preference(struct app *a);
 static void tb_receiver_cycle_language_preference(struct app *a);
 static void tb_receiver_refresh_language_text(struct app *a);
@@ -262,9 +262,9 @@ static void tb_receiver_ensure_settings_dir(void) {
     mkdir(path, 0755);
 }
 
-static void tb_receiver_load_language_preference(char *dest, size_t size) {
-    if (!dest || size == 0) return;
-    snprintf(dest, size, "%s", "auto");
+/* Reads a string field from the settings JSON; dest is left untouched if absent. */
+static void tb_receiver_read_setting(const char *key, char *dest, size_t size) {
+    if (!key || !dest || size == 0) return;
 
     char path[PATH_MAX];
     tb_receiver_settings_path(path, sizeof(path));
@@ -278,25 +278,41 @@ static void tb_receiver_load_language_preference(char *dest, size_t size) {
     fclose(fp);
     buf[n] = '\0';
 
-    const char *pos = strstr(buf, "\"language\"");
+    char quoted[64];
+    snprintf(quoted, sizeof(quoted), "\"%s\"", key);
+    const char *pos = strstr(buf, quoted);
     if (!pos) return;
-    pos = strchr(pos, ':');
+    pos = strchr(pos + strlen(quoted), ':');
     if (!pos) return;
     pos = strchr(pos, '"');
     if (!pos) return;
     pos++;
 
-    char code[8];
+    char value[8];
     size_t i = 0;
-    while (*pos && *pos != '"' && i + 1 < sizeof(code)) code[i++] = *pos++;
-    code[i] = '\0';
-
-    if (tb_receiver_is_valid_language_pref(code)) {
-        snprintf(dest, size, "%s", code);
-    }
+    while (*pos && *pos != '"' && i + 1 < sizeof(value)) value[i++] = *pos++;
+    value[i] = '\0';
+    snprintf(dest, size, "%s", value);
 }
 
-static void tb_receiver_save_language_preference(const char *language_pref) {
+static void tb_receiver_load_language_preference(char *dest, size_t size) {
+    if (!dest || size == 0) return;
+    char code[8] = "auto";
+    tb_receiver_read_setting("language", code, sizeof(code));
+    snprintf(dest, size, "%s", tb_receiver_is_valid_language_pref(code) ? code : "auto");
+}
+
+/* Last language pushed by a Sender, applied at launch while the preference is
+ * "auto" so the idle screen does not fall back to the system language. */
+static void tb_receiver_load_sender_language(char *dest, size_t size) {
+    if (!dest || size == 0) return;
+    char code[8] = "";
+    tb_receiver_read_setting("senderLanguage", code, sizeof(code));
+    const int valid = tb_receiver_is_valid_language_pref(code) && strcmp(code, "auto") != 0;
+    snprintf(dest, size, "%s", valid ? code : "");
+}
+
+static void tb_receiver_save_settings(const char *language_pref, const char *sender_language) {
     if (!tb_receiver_is_valid_language_pref(language_pref)) return;
     tb_receiver_ensure_settings_dir();
 
@@ -306,7 +322,10 @@ static void tb_receiver_save_language_preference(const char *language_pref) {
 
     FILE *fp = fopen(path, "wb");
     if (!fp) return;
-    fprintf(fp, "{\n  \"language\": \"%s\"\n}\n", language_pref);
+    const int sender_valid = sender_language && tb_receiver_is_valid_language_pref(sender_language) &&
+                             strcmp(sender_language, "auto") != 0;
+    fprintf(fp, "{\n  \"language\": \"%s\",\n  \"senderLanguage\": \"%s\"\n}\n",
+            language_pref, sender_valid ? sender_language : "");
     fclose(fp);
 }
 
@@ -460,7 +479,7 @@ static void tb_receiver_cycle_language_preference(struct app *a) {
         snprintf(a->language_pref, sizeof(a->language_pref), "%s", "auto");
     }
 
-    tb_receiver_save_language_preference(a->language_pref);
+    tb_receiver_save_settings(a->language_pref, a->sender_ui_language);
     tb_receiver_apply_language_preference(a);
 }
 
@@ -1153,6 +1172,10 @@ static void on_packet(uint8_t type, const uint8_t *payload, size_t len, void *ud
             ui_language[0] = '\0';
             extract_json_string_field(payload, len, "\"uiLanguage\"", ui_language, sizeof(ui_language));
             if (ui_language[0] != '\0') {
+                if (strcmp(a->sender_ui_language, ui_language) != 0 &&
+                    tb_receiver_is_valid_language_pref(ui_language)) {
+                    tb_receiver_save_settings(a->language_pref, ui_language);
+                }
                 snprintf(a->sender_ui_language, sizeof(a->sender_ui_language), "%s", ui_language);
                 if (strcmp(a->language_pref, "auto") == 0) {
                     tb_i18n_set_runtime_language(ui_language);
@@ -1170,6 +1193,10 @@ static void on_packet(uint8_t type, const uint8_t *payload, size_t len, void *ud
             ui_language[0] = '\0';
             extract_json_string_field(payload, len, "\"uiLanguage\"", ui_language, sizeof(ui_language));
             if (ui_language[0] != '\0') {
+                if (strcmp(a->sender_ui_language, ui_language) != 0 &&
+                    tb_receiver_is_valid_language_pref(ui_language)) {
+                    tb_receiver_save_settings(a->language_pref, ui_language);
+                }
                 snprintf(a->sender_ui_language, sizeof(a->sender_ui_language), "%s", ui_language);
                 if (strcmp(a->language_pref, "auto") == 0) {
                     tb_i18n_set_runtime_language(ui_language);
@@ -2062,8 +2089,12 @@ int main(int argc, char **argv) {
 
     char startup_language_pref[8];
     tb_receiver_load_language_preference(startup_language_pref, sizeof(startup_language_pref));
+    char startup_sender_language[8];
+    tb_receiver_load_sender_language(startup_sender_language, sizeof(startup_sender_language));
     if (strcmp(startup_language_pref, "auto") != 0) {
         tb_i18n_set_runtime_language(startup_language_pref);
+    } else if (startup_sender_language[0] != '\0') {
+        tb_i18n_set_runtime_language(startup_sender_language);
     }
     (void)tb_i18n_init();
 
@@ -2120,6 +2151,7 @@ int main(int argc, char **argv) {
                       : (usb_ip[0] ? usb_ip
                                    : (net_ip[0] ? net_ip : tb_i18n_get("receiver.network.not_detected"))));
     snprintf(a.language_pref, sizeof(a.language_pref), "%s", startup_language_pref);
+    snprintf(a.sender_ui_language, sizeof(a.sender_ui_language), "%s", startup_sender_language);
     snprintf(a.input_control_mode, sizeof(a.input_control_mode), "%s", "off");
     a.last_input_monitoring_trusted = -1;
     a.last_accessibility_trusted = -1;
@@ -2156,8 +2188,6 @@ int main(int argc, char **argv) {
     } else {
         tb_copy_i18n(a.panel_text, sizeof(a.panel_text), "receiver.panel.default");
     }
-    bonjour_update(&a, TB_PORT);
-
     a.dec = tb_dec_create(on_frame, &a);
     if (!a.dec) { fprintf(stderr, "tb_dec_create failed\n"); tb_disp_destroy(a.disp); return 1; }
 
@@ -2165,6 +2195,9 @@ int main(int argc, char **argv) {
 
     a.server_fd = tb_net_listen(TB_PORT);
     if (a.server_fd < 0) { fprintf(stderr, "tb_net_listen failed\n"); return 1; }
+    /* Advertise only once connections are accepted, so a Sender's immediate
+     * language push after discovery is not refused. */
+    bonjour_update(&a, TB_PORT);
 
     a.last_fps_tick_ms = now_ms();
     {
