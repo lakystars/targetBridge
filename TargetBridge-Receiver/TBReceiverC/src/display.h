@@ -55,6 +55,8 @@ struct tb_cursor_state {
     double y_norm;
     int    type;
     int    size;
+    int    large;
+    int    source_w;
 };
 /* Returns 1 and fills out when the cursor changed in external video mode. */
 int  tb_disp_take_cursor_update(struct tb_display *d, struct tb_cursor_state *out);

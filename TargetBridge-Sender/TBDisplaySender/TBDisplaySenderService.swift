@@ -1343,11 +1343,15 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
     private var statusState: TBDisplaySenderStatusState = .ready
     private var streamingActivity: NSObjectProtocol?
     private var displayWakeAssertionID = IOPMAssertionID(0)
-    private var lastCheckedCursor: NSCursor?
+    /// NSCursor.currentSystem returns a new object on every call, so shape
+    /// changes are detected by a fingerprint sampled at ~30 Hz.
+    private var lastCursorFingerprint: Int?
     private var lastCheckedCursorType: Int = 0
+    private var cursorShapeTick = 0
     private var baselineDisplayIDs = Set<CGDirectDisplayID>()
     private var cursorDisplayID: CGDirectDisplayID = kCGNullDirectDisplay
     private var lastCursorPacket: TBMonitorCursor?
+    private var lastCursorImagePayload: Data?
     private var injectedRemoteMouseLocation: CGPoint?
     private var injectedLeftClickTracker = TBInjectedClickStateTracker()
     private let localPointerModifierBridge = TBLocalPointerModifierBridge()
@@ -3192,6 +3196,9 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
         cursorTimer?.invalidate()
         cursorDisplayID = displayID
         lastCursorPacket = nil
+        // A new stream may be a new receiver session; resend the cursor image.
+        lastCursorFingerprint = nil
+        lastCursorImagePayload = nil
 
         let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -3237,17 +3244,35 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
         startCursorUpdates(displayID: cursorDisplayID)
     }
 
-    private func getCurrentCursorType() -> Int {
-        guard let current = NSCursor.currentSystem else { return 0 }
-        if let last = lastCheckedCursor, last == current {
-            return lastCheckedCursorType
+    /// Re-reads the system cursor every 4th tick and, when its shape changed,
+    /// updates the cursor type and sends the new bitmap.
+    private func refreshCursorShapeIfNeeded(displayBounds: CGRect) {
+        cursorShapeTick &+= 1
+        guard lastCursorFingerprint == nil || cursorShapeTick % 4 == 0,
+              let current = NSCursor.currentSystem else { return }
+        let fingerprint = Self.cursorFingerprint(current)
+        guard fingerprint != lastCursorFingerprint else { return }
+        lastCursorFingerprint = fingerprint
+        lastCheckedCursorType = Self.cursorType(for: current)
+        sendCursorImageIfNeeded(current, displayBounds: displayBounds)
+    }
+
+    private static func cursorFingerprint(_ cursor: NSCursor) -> Int {
+        var hasher = Hasher()
+        hasher.combine(cursor.hotSpot.x)
+        hasher.combine(cursor.hotSpot.y)
+        hasher.combine(cursor.image.size.width)
+        hasher.combine(cursor.image.size.height)
+        if let data = cursor.image.cgImage(forProposedRect: nil, context: nil, hints: nil)?
+            .dataProvider?.data as Data? {
+            hasher.combine(data)
         }
+        return hasher.finalize()
+    }
 
-        lastCheckedCursor = current
-
-        if let currentPng = Self.normalizedPng(for: current.image),
-           let matchedType = Self.standardCursorPngs[currentPng] {
-            lastCheckedCursorType = matchedType
+    private static func cursorType(for current: NSCursor) -> Int {
+        if let currentPng = normalizedPng(for: current.image),
+           let matchedType = standardCursorPngs[currentPng] {
             return matchedType
         }
 
@@ -3273,8 +3298,6 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
         } else {
             type = 0 // Arrow
         }
-
-        lastCheckedCursorType = type
         return type
     }
 
@@ -3290,6 +3313,8 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
         let localY = point.y - bounds.origin.y
         let visible = localX >= 0 && localY >= 0 && localX <= bounds.width && localY <= bounds.height
 
+        refreshCursorShapeIfNeeded(displayBounds: bounds)
+
         let scaledX = Int((max(0, min(bounds.width, localX)) / bounds.width) * Double(capturePreset.width))
         let scaledY = Int((max(0, min(bounds.height, localY)) / bounds.height) * Double(capturePreset.height))
         let cursor = TBMonitorCursor(
@@ -3298,7 +3323,7 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             width: capturePreset.width,
             height: capturePreset.height,
             visible: visible,
-            type: getCurrentCursorType(),
+            type: lastCheckedCursorType,
             large: largeCursor
         )
 
@@ -3318,6 +3343,48 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
         if let packet = TBMonitorProtocol.makeJSONPacket(type: .cursor, value: cursor) {
             send(packet)
         }
+    }
+
+    /// Sends the current macOS cursor bitmap when it changes, so receivers that
+    /// support `cursorImage` draw the native shape instead of a built-in one.
+    private func sendCursorImageIfNeeded(_ current: NSCursor, displayBounds: CGRect) {
+        guard activeProfile?.supportsCursorImage == true else { return }
+        let captureScale = Double(capturePreset.width) / displayBounds.width
+        guard let png = Self.cursorBitmapPNG(for: current.image) else { return }
+        let payload = TBMonitorCursorImage.payload(
+            png: png,
+            hotspotX: Int((current.hotSpot.x * captureScale).rounded()),
+            hotspotY: Int((current.hotSpot.y * captureScale).rounded()),
+            width: Int((current.image.size.width * captureScale).rounded()),
+            height: Int((current.image.size.height * captureScale).rounded())
+        )
+        guard payload != lastCursorImagePayload else { return }
+        lastCursorImagePayload = payload
+        send(TBMonitorProtocol.makePacket(type: .cursorImage, payload: payload))
+    }
+
+    /// Renders a cursor image at 2x its point size, matching HiDPI receivers.
+    private static func cursorBitmapPNG(for image: NSImage) -> Data? {
+        let size = image.size
+        guard size.width > 0, size.height > 0,
+              let bitmap = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int((size.width * 2).rounded(.up)),
+                pixelsHigh: Int((size.height * 2).rounded(.up)),
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+              ) else { return nil }
+        bitmap.size = size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        image.draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        return bitmap.representation(using: .png, properties: [:])
     }
 
     private func registerWakeObservers() {

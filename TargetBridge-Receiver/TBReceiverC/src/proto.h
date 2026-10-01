@@ -59,6 +59,8 @@
  * Both are private CoreBrightness features, so the receiver reports whether it
  * can honour them in its display profile. */
 #define TB_PKT_DISPLAY_TWEAKS   0x38
+/* Native cursor bitmap: [u8 ver][BE16 hotX][BE16 hotY][BE16 w][BE16 h][PNG], capture pixels */
+#define TB_PKT_CURSOR_IMAGE     0x39
 #define TB_PKT_TEST_DATA        0x40
 
 #define TB_HDR_BYTES        5   /* 4 length + 1 type */

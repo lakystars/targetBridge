@@ -19,6 +19,7 @@ enum TBMonitorPacketType: UInt8 {
     case volume = 0x37
     /// Night Shift / True Tone on the receiver's panel.
     case displayTweaks = 0x38
+    case cursorImage = 0x39  // Native cursor bitmap for the receiver-drawn cursor
     case testData = 0x40
 }
 
@@ -46,6 +47,8 @@ struct TBMonitorDisplayProfile: Codable {
     var supportsRawNV12: Bool?
     /// Whether the receiver can display HEVC Main10; nil for older receivers.
     var supportsHEVCMain10: Bool?
+    /// Whether the receiver can draw cursor bitmaps (`cursorImage`); nil for older receivers.
+    var supportsCursorImage: Bool?
     var inputMonitoringTrusted: Bool?
     var accessibilityTrusted: Bool?
     /// Optional so older receivers still decode; absent means "cannot".
@@ -69,6 +72,23 @@ struct TBMonitorHeartbeat: Codable {
 
 struct TBMonitorTeardown: Codable {
     var reason: String
+}
+
+/// Cursor image payload: [u8 version=1][BE16 hotspotX][BE16 hotspotY][BE16 width][BE16 height][PNG].
+/// Geometry is in capture pixels, the same space as `TBMonitorCursor.x/y`.
+enum TBMonitorCursorImage {
+    static let version: UInt8 = 1
+
+    static func payload(png: Data, hotspotX: Int, hotspotY: Int, width: Int, height: Int) -> Data {
+        var payload = Data([version])
+        for value in [hotspotX, hotspotY, width, height] {
+            let clamped = UInt16(clamping: max(0, value))
+            payload.append(UInt8(clamped >> 8))
+            payload.append(UInt8(clamped & 0xff))
+        }
+        payload.append(png)
+        return payload
+    }
 }
 
 struct TBMonitorCursor: Codable {

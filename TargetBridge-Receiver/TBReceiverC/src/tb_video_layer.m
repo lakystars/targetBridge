@@ -3,6 +3,7 @@
 #import <CoreMedia/CoreMedia.h>
 #import <QuartzCore/QuartzCore.h>
 #import <VideoToolbox/VideoToolbox.h>
+#import <ImageIO/ImageIO.h>
 
 #include "tb_video_layer.h"
 
@@ -40,6 +41,12 @@ struct tb_video_layer {
     double cursor_y;
     int cursor_visible;
     CGSize cursor_bounds;
+    int cursor_source_w;
+    int cursor_large;
+    /* Native cursor bitmap mode: geometry in source pixels, applied per scale. */
+    int cursor_image_mode;
+    CGSize cursor_image_size;
+    double cursor_image_scale;
     int cursor_dim;
     int cursor_hotspot;
     CMVideoFormatDescriptionRef fmt;
@@ -316,6 +323,7 @@ void tb_vlayer_set_cursor_image(struct tb_video_layer *v, const uint8_t *argb,
         [CATransaction commit];
         v->cursor_dim = dim;
         v->cursor_hotspot = hotspot;
+        v->cursor_image_mode = 0;
         CGImageRelease(image);
     }
     if (provider) CGDataProviderRelease(provider);
@@ -323,15 +331,28 @@ void tb_vlayer_set_cursor_image(struct tb_video_layer *v, const uint8_t *argb,
     CGColorSpaceRelease(space);
 }
 
-void tb_vlayer_set_cursor(struct tb_video_layer *v, double x_norm, double y_norm, int visible) {
+void tb_vlayer_set_cursor(struct tb_video_layer *v, double x_norm, double y_norm, int visible,
+                          int source_w, int large) {
     if (!v) return;
     v->cursor_x = x_norm;
     v->cursor_y = y_norm;
     v->cursor_visible = visible;
+    v->cursor_source_w = source_w;
+    v->cursor_large = large;
     CGRect bounds = v->root.bounds;
     v->cursor_bounds = bounds.size;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    /* source_w of 1 is the display's "no cursor yet" placeholder. */
+    if (v->cursor_image_mode && source_w > 1) {
+        /* Source pixels map to view points by the same ratio as the video. */
+        double scale = bounds.size.width / source_w * (large ? 1.8 : 1.0);
+        if (scale != v->cursor_image_scale) {
+            v->cursor_image_scale = scale;
+            v->cursor.bounds = CGRectMake(0, 0, v->cursor_image_size.width * scale,
+                                          v->cursor_image_size.height * scale);
+        }
+    }
     v->cursor.hidden = (visible && v->cursor_dim > 0) ? NO : YES;
     v->cursor.position = CGPointMake(x_norm * bounds.size.width,
                                      (1.0 - y_norm) * bounds.size.height);
@@ -342,7 +363,38 @@ void tb_vlayer_refresh_cursor(struct tb_video_layer *v) {
     if (!v) return;
     /* Bounds changed (e.g. fullscreen): re-apply the last position. */
     if (CGSizeEqualToSize(v->root.bounds.size, v->cursor_bounds)) return;
-    tb_vlayer_set_cursor(v, v->cursor_x, v->cursor_y, v->cursor_visible);
+    tb_vlayer_set_cursor(v, v->cursor_x, v->cursor_y, v->cursor_visible,
+                         v->cursor_source_w, v->cursor_large);
+}
+
+int tb_vlayer_set_cursor_png(struct tb_video_layer *v, const uint8_t *png, size_t len,
+                             int hotspot_x, int hotspot_y, int width, int height) {
+    if (!v || !png || len == 0 || width <= 0 || height <= 0) return -1;
+    CFDataRef data = CFDataCreate(kCFAllocatorDefault, png, (CFIndex)len);
+    if (!data) return -1;
+    CGImageSourceRef source = CGImageSourceCreateWithData(data, NULL);
+    CGImageRef image = source ? CGImageSourceCreateImageAtIndex(source, 0, NULL) : NULL;
+    if (source) CFRelease(source);
+    CFRelease(data);
+    if (!image) return -1;
+
+    CGFloat backing = v->view.window.backingScaleFactor > 0 ? v->view.window.backingScaleFactor : 1.0;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    v->cursor.contents = (__bridge id)image;
+    v->cursor.contentsScale = backing;
+    /* Unflipped coordinates; anchor on the hotspot (top-left origin in the source). */
+    v->cursor.anchorPoint = CGPointMake((CGFloat)hotspot_x / width, 1.0 - (CGFloat)hotspot_y / height);
+    [CATransaction commit];
+    CGImageRelease(image);
+
+    v->cursor_image_mode = 1;
+    v->cursor_image_size = CGSizeMake(width, height);
+    v->cursor_image_scale = 0;
+    v->cursor_dim = width;
+    tb_vlayer_set_cursor(v, v->cursor_x, v->cursor_y, v->cursor_visible,
+                         v->cursor_source_w, v->cursor_large);
+    return 0;
 }
 
 int tb_vlayer_supports_main10_hw(void) {
@@ -391,6 +443,8 @@ int tb_vlayer_has_format(struct tb_video_layer *v) {
 void tb_vlayer_reset(struct tb_video_layer *v) {
     if (!v) return;
     v->cursor.hidden = YES;
+    v->cursor_image_mode = 0;
+    v->cursor_dim = 0;
     [v->layer flushAndRemoveImage];
     if (v->fmt) {
         CFRelease(v->fmt);

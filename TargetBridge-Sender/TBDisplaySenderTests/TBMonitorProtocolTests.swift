@@ -60,6 +60,14 @@ final class TBMonitorProtocolTests: XCTestCase {
         XCTAssertNil(profile.supportsHEVCMain10)
     }
 
+    func testCursorImagePayloadLayout() {
+        let png = Data([0x89, 0x50, 0x4e, 0x47])
+        let payload = TBMonitorCursorImage.payload(png: png, hotspotX: 10, hotspotY: 300, width: 64, height: 70000)
+        XCTAssertEqual(TBMonitorPacketType.cursorImage.rawValue, 0x39)
+        XCTAssertEqual(Array(payload.prefix(9)), [1, 0, 10, 0x01, 0x2c, 0, 64, 0xff, 0xff])
+        XCTAssertEqual(payload.suffix(4), png)
+    }
+
     func testDisplayProfileDecodesMain10Support() throws {
         let data = Data("""
         {

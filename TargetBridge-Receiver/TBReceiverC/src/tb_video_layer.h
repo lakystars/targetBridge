@@ -31,7 +31,11 @@ int  tb_vlayer_enqueue(struct tb_video_layer *v, const uint8_t *avcc, size_t len
 void tb_vlayer_set_visible(struct tb_video_layer *v, int visible);
 /* argb: premultiplied ARGB8888, dim x dim, hotspot at (hotspot, hotspot). */
 void tb_vlayer_set_cursor_image(struct tb_video_layer *v, const uint8_t *argb, int dim, int hotspot);
-void tb_vlayer_set_cursor(struct tb_video_layer *v, double x_norm, double y_norm, int visible);
+void tb_vlayer_set_cursor(struct tb_video_layer *v, double x_norm, double y_norm, int visible,
+                          int source_w, int large);
+/* Native cursor bitmap; geometry in source (capture) pixels. Returns 0 on success. */
+int  tb_vlayer_set_cursor_png(struct tb_video_layer *v, const uint8_t *png, size_t len,
+                              int hotspot_x, int hotspot_y, int width, int height);
 /* Re-place the cursor after the view size changes. */
 void tb_vlayer_refresh_cursor(struct tb_video_layer *v);
 int  tb_vlayer_has_format(struct tb_video_layer *v);

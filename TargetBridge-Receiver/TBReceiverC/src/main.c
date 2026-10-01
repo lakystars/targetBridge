@@ -71,6 +71,8 @@ struct app {
     struct tb_video_layer *vlayer;
     int      cursor_sprite_type;
     int      cursor_sprite_size;
+    /* Sender supplied a native cursor bitmap; skip built-in sprites. */
+    int      cursor_image_active;
     /* Per-second stage timings, enabled with TB_RECEIVER_TIMING=1. */
     int      timing_enabled;
     uint64_t timing_bytes;
@@ -936,6 +938,7 @@ static void tb_receiver_disable_vlayer(struct app *a, const char *reason, int re
     fprintf(stderr, "[vlayer] disabled (%s), falling back to FFmpeg decode\n", reason);
     tb_vlayer_destroy(a->vlayer);
     a->vlayer = NULL;
+    a->cursor_image_active = 0;
     tb_disp_set_external_video(a->disp, 0);
     /* The sender picked codec settings (e.g. Main10) for the layer; drop the
      * session so the next connection negotiates against the FFmpeg path. */
@@ -1266,6 +1269,17 @@ static void on_packet(uint8_t type, const uint8_t *payload, size_t len, void *ud
             (void)extract_json_int_field(payload, len, "\"type\"", &type);
             (void)extract_json_bool_field(payload, len, "\"large\"", &large);
             tb_disp_set_cursor(a->disp, x, y, w, h, visible, type, large);
+        }
+        break;
+    case TB_PKT_CURSOR_IMAGE:
+        if (a->vlayer && len > 9 && payload[0] == 1) {
+            const int hot_x = (payload[1] << 8) | payload[2];
+            const int hot_y = (payload[3] << 8) | payload[4];
+            const int width = (payload[5] << 8) | payload[6];
+            const int height = (payload[7] << 8) | payload[8];
+            if (tb_vlayer_set_cursor_png(a->vlayer, payload + 9, len - 9, hot_x, hot_y, width, height) == 0) {
+                a->cursor_image_active = 1;
+            }
         }
         break;
     case TB_PKT_BRIGHTNESS:
@@ -1917,7 +1931,7 @@ static void send_receiver_info(struct app *a) {
         "{\"receiverName\":\"%s\",\"panelWidth\":%u,\"panelHeight\":%u,"
         "\"modeWidth\":%u,\"modeHeight\":%u,\"refreshRate\":60,"
         "\"hiDPI\":%s,\"captureWidth\":%u,\"captureHeight\":%u,"
-        "\"supportsHEVCDecode\":%s,\"supportsRawNV12\":true,\"supportsHEVCMain10\":%s,"
+        "\"supportsHEVCDecode\":%s,\"supportsRawNV12\":true,\"supportsHEVCMain10\":%s,\"supportsCursorImage\":%s,"
         "\"inputMonitoringTrusted\":%s,\"accessibilityTrusted\":%s,"
         "\"supportsNightShift\":%s,\"supportsTrueTone\":%s}",
         escaped_name,
@@ -1932,6 +1946,8 @@ static void send_receiver_info(struct app *a) {
         /* The FFmpeg path assumes 8-bit NV12; Main10 needs the video layer
          * and a hardware Main10 decoder. */
         (a->vlayer && tb_dec_supports_hevc_hwdecode() && tb_vlayer_supports_main10_hw()) ? "true" : "false",
+        /* Cursor bitmaps are drawn by the video layer's cursor layer only. */
+        a->vlayer ? "true" : "false",
         tb_receiver_input_monitoring_trusted() ? "true" : "false",
         tb_receiver_accessibility_trusted() ? "true" : "false",
         tb_night_shift_supported() ? "true" : "false",
@@ -1963,7 +1979,8 @@ static void tb_receiver_sync_cursor(struct app *a) {
         tb_vlayer_refresh_cursor(a->vlayer);
         return;
     }
-    if (cs.type != a->cursor_sprite_type || cs.size != a->cursor_sprite_size) {
+    if (!a->cursor_image_active &&
+        (cs.type != a->cursor_sprite_type || cs.size != a->cursor_sprite_size)) {
         uint8_t *pixels = NULL;
         int dim = 0, hotspot = 0;
         if (tb_disp_render_cursor_sprite(a->disp, cs.type, cs.size, &pixels, &dim, &hotspot) == 0) {
@@ -1973,7 +1990,7 @@ static void tb_receiver_sync_cursor(struct app *a) {
             a->cursor_sprite_size = cs.size;
         }
     }
-    tb_vlayer_set_cursor(a->vlayer, cs.x_norm, cs.y_norm, cs.visible);
+    tb_vlayer_set_cursor(a->vlayer, cs.x_norm, cs.y_norm, cs.visible, cs.source_w, cs.large);
 }
 
 static void close_client(struct app *a) {
@@ -1993,6 +2010,9 @@ static void close_client(struct app *a) {
     tb_parser_init(&a->parser, on_packet, a);
     tb_dec_reset(a->dec);   /* fresh decoder for next session */
     tb_vlayer_reset(a->vlayer);
+    a->cursor_image_active = 0;
+    a->cursor_sprite_type = -1;
+    a->cursor_sprite_size = -1;
     tb_audio_close_for_idle(a);
     fprintf(stderr, "[main] client disconnected\n");
 }

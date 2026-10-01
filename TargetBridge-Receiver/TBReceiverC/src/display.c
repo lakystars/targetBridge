@@ -1233,6 +1233,8 @@ int tb_disp_take_cursor_update(struct tb_display *d, struct tb_cursor_state *out
     out->y_norm = (double)d->cursor_y / (double)(d->cursor_source_h > 0 ? d->cursor_source_h : 1);
     out->type = d->cursor_type;
     out->size = tb_disp_cursor_size(d->cursor_large, out_w);
+    out->large = d->cursor_large;
+    out->source_w = d->cursor_source_w;
     return 1;
 }
 
