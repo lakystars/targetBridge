@@ -221,7 +221,13 @@ enum TBDisplayCapturePreset: String, CaseIterable, Identifiable {
         if let envVal = ProcessInfo.processInfo.environment["MPVP"], let parsed = Int(envVal) {
             return parsed
         }
-        return 3
+        switch self {
+        case .native5k60Experimental:
+            // 5K HEVC encodes take ~50 ms (3 frames); a limit of 3 caps below 60 fps.
+            return 4
+        default:
+            return 3
+        }
     }
 
     var maxFrameDelayCount: Int {
@@ -477,6 +483,9 @@ private final class TBVideoPipeline: @unchecked Sendable {
     // Confined to `queue`.
     private var vtEncoder: VTCompressionSession?
     private var vtEncoderRef: Unmanaged<TBVideoPipeline>?
+    private var encodeLatencySumNs: UInt64 = 0
+    private var encodeLatencyMaxNs: UInt64 = 0
+    private var encodeLatencyCount = 0
     private var pendingVideoPackets = 0
     private var inFlightEncodeFrames = 0
     private var displayStreamFrameSequence: CMTimeValue = 0
@@ -595,11 +604,15 @@ private final class TBVideoPipeline: @unchecked Sendable {
         let retained = Unmanaged.passRetained(self)
         vtEncoderRef = retained
 
-        let callback: VTCompressionOutputCallback = { ref, _, status, _, sampleBuffer in
+        let callback: VTCompressionOutputCallback = { ref, sourceFrameRef, status, _, sampleBuffer in
             guard let ref else { return }
             let pipeline = Unmanaged<TBVideoPipeline>.fromOpaque(ref).takeUnretainedValue()
+            let finishedAt = DispatchTime.now().uptimeNanoseconds
+            // sourceFrameRefcon carries the submit time (ns) as a bit pattern.
+            let submittedAt = UInt64(UInt(bitPattern: sourceFrameRef))
             pipeline.queue.async {
                 pipeline.inFlightEncodeFrames = max(0, pipeline.inFlightEncodeFrames - 1)
+                pipeline.recordEncodeLatency(submittedAt: submittedAt, finishedAt: finishedAt)
                 guard status == noErr, let sampleBuffer else { return }
                 pipeline.handleEncoded(sampleBuffer)
             }
@@ -728,17 +741,40 @@ private final class TBVideoPipeline: @unchecked Sendable {
 
     private func encode(pixelBuffer: CVPixelBuffer, presentationTimeStamp pts: CMTime, using encoder: VTCompressionSession) {
         inFlightEncodeFrames += 1
+        let submittedAt = UnsafeMutableRawPointer(bitPattern: UInt(DispatchTime.now().uptimeNanoseconds))
         let status = VTCompressionSessionEncodeFrame(
             encoder,
             imageBuffer: pixelBuffer,
             presentationTimeStamp: pts,
             duration: .invalid,
             frameProperties: nil,
-            sourceFrameRefcon: nil,
+            sourceFrameRefcon: submittedAt,
             infoFlagsOut: nil
         )
         if status != noErr {
             inFlightEncodeFrames = max(0, inFlightEncodeFrames - 1)
+        }
+    }
+
+    private func recordEncodeLatency(submittedAt: UInt64, finishedAt: UInt64) {
+        guard submittedAt > 0, finishedAt > submittedAt else { return }
+        let latency = finishedAt - submittedAt
+        encodeLatencySumNs += latency
+        encodeLatencyMaxNs = max(encodeLatencyMaxNs, latency)
+        encodeLatencyCount += 1
+    }
+
+    /// Average and max encode latency (ms) since the previous call; resets the counters.
+    func takeEncodeLatencySnapshot() -> (avgMs: Double, maxMs: Double) {
+        queue.sync {
+            defer {
+                encodeLatencySumNs = 0
+                encodeLatencyMaxNs = 0
+                encodeLatencyCount = 0
+            }
+            guard encodeLatencyCount > 0 else { return (0, 0) }
+            return (Double(encodeLatencySumNs) / Double(encodeLatencyCount) / 1_000_000,
+                    Double(encodeLatencyMaxNs) / 1_000_000)
         }
     }
 
@@ -3453,6 +3489,12 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
                 liveMetrics.senderFPS = fps
                 senderFPS = fps
                 sentSnapshot = total
+                if verboseDisplayLogging, let pipeline {
+                    let diag = pipeline.diagnosticsSnapshot()
+                    let latency = pipeline.takeEncodeLatencySnapshot()
+                    // Counters are cumulative; per-second rates come from consecutive lines.
+                    TBLog.connection.info("pipeline: sentFPS=\(fps, privacy: .public) captured=\(diag.captured, privacy: .public) droppedPacing=\(diag.droppedPacing, privacy: .public) droppedPre=\(diag.droppedPre, privacy: .public) droppedPost=\(diag.droppedPost, privacy: .public) pending=\(diag.pending, privacy: .public) inFlight=\(diag.inFlight, privacy: .public) encodeAvgMs=\(String(format: "%.1f", latency.avgMs), privacy: .public) encodeMaxMs=\(String(format: "%.1f", latency.maxMs), privacy: .public)")
+                }
             }
         }
     }
