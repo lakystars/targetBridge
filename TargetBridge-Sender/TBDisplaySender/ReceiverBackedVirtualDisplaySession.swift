@@ -164,7 +164,8 @@ final class ReceiverBackedVirtualDisplaySession {
                                                 mode: resolvedMode,
                                                 hiDPI: profile.hiDPI,
                                                 refreshRate: preferredRefreshRate,
-                                                savedChoice: savedChoice)
+                                                savedChoice: savedChoice,
+                                                preferenceKey: preferenceKey)
 
         virtualDisplay = display
         displayID = display.displayID
@@ -188,22 +189,33 @@ final class ReceiverBackedVirtualDisplaySession {
         identityDescription = ""
     }
 
-    /// Applies the saved or preferred mode and returns it, so the mode memory can
-    /// tell this programmatic change apart from a user's manual pick.
+    /// Applies the saved mode, else the best-ranked preferred mode, trying the
+    /// next candidate when one is rejected. Returns the applied mode so the mode
+    /// memory can tell this programmatic change apart from a user's manual pick.
     @discardableResult
     private func activatePreferredMode(for displayID: CGDirectDisplayID,
                                        mode: TBVirtualDisplayModeSize,
                                        hiDPI: Bool,
                                        refreshRate: Double,
-                                       savedChoice: TBVirtualDisplayModeMemory.Choice?) -> TBVirtualDisplayModeMemory.Choice? {
+                                       savedChoice: TBVirtualDisplayModeMemory.Choice?,
+                                       preferenceKey: String) -> TBVirtualDisplayModeMemory.Choice? {
         let timeout = Date().addingTimeInterval(2.0)
         while Date() < timeout {
             var applied: TBVirtualDisplayModeMemory.Choice?
             autoreleasepool {
-                let chosenMode = savedChoice.flatMap { savedMode(for: displayID, choice: $0) }
-                    ?? preferredMode(for: displayID, mode: mode, hiDPI: hiDPI, refreshRate: refreshRate)
-                if let chosenMode, CGDisplaySetDisplayMode(displayID, chosenMode, nil) == .success {
-                    applied = TBVirtualDisplayModeMemory.Choice(mode: chosenMode)
+                let saved = savedChoice.flatMap { savedMode(for: displayID, choice: $0) }
+                if let saved, CGDisplaySetDisplayMode(displayID, saved, nil) == .success {
+                    applied = TBVirtualDisplayModeMemory.Choice(mode: saved)
+                    return
+                }
+                if savedChoice != nil, saved == nil {
+                    // The remembered mode is no longer offered; stop restoring it.
+                    TBVirtualDisplayModeMemory.shared.forget(key: preferenceKey)
+                }
+                for candidate in preferredModes(for: displayID, mode: mode, hiDPI: hiDPI, refreshRate: refreshRate)
+                where CGDisplaySetDisplayMode(displayID, candidate, nil) == .success {
+                    applied = TBVirtualDisplayModeMemory.Choice(mode: candidate)
+                    return
                 }
             }
             if let applied {
@@ -235,31 +247,31 @@ final class ReceiverBackedVirtualDisplaySession {
         return candidates.first
     }
 
-    private func preferredMode(for displayID: CGDirectDisplayID,
-                               mode: TBVirtualDisplayModeSize,
-                               hiDPI: Bool,
-                               refreshRate: Double) -> CGDisplayMode? {
+    private func preferredModes(for displayID: CGDirectDisplayID,
+                                mode: TBVirtualDisplayModeSize,
+                                hiDPI: Bool,
+                                refreshRate: Double) -> [CGDisplayMode] {
         // Without the duplicates option macOS lists only the 1x ("low resolution")
         // variant of a HiDPI point size, so the 2x backing mode is never chosen.
         let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
         guard let modesCF = CGDisplayCopyAllDisplayModes(displayID, options) else {
-            return nil
+            return []
         }
         let modes = modesCF as? [CGDisplayMode] ?? []
         let candidates = modes.map {
             TBDisplayModeCandidate(width: $0.width, height: $0.height,
                                    pixelWidth: $0.pixelWidth, refreshRate: $0.refreshRate)
         }
-        return Self.preferredCandidateIndex(candidates, mode: mode, hiDPI: hiDPI, refreshRate: refreshRate)
+        return Self.preferredCandidateOrder(candidates, mode: mode, hiDPI: hiDPI, refreshRate: refreshRate)
             .map { modes[$0] }
     }
 
-    /// Picks the mode at the requested point size, preferring the 2x backing
-    /// variant for HiDPI, then the requested refresh rate, then the fastest.
-    nonisolated static func preferredCandidateIndex(_ candidates: [TBDisplayModeCandidate],
+    /// Modes at the requested point size, best first: the 2x backing variant for
+    /// HiDPI, then the requested refresh rate, then the fastest.
+    nonisolated static func preferredCandidateOrder(_ candidates: [TBDisplayModeCandidate],
                                                     mode: TBVirtualDisplayModeSize,
                                                     hiDPI: Bool,
-                                                    refreshRate: Double) -> Int? {
+                                                    refreshRate: Double) -> [Int] {
         let wantedPixelWidth = hiDPI ? mode.backingWidth : mode.width
         let matching = candidates.indices.filter {
             candidates[$0].width == mode.width && candidates[$0].height == mode.height
@@ -270,6 +282,6 @@ final class ReceiverBackedVirtualDisplaySession {
                     abs(candidate.refreshRate - refreshRate) < 0.5 ? 0 : 1,
                     -candidate.refreshRate)
         }
-        return matching.min { rank($0) < rank($1) }
+        return matching.sorted { rank($0) < rank($1) }
     }
 }

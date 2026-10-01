@@ -65,6 +65,10 @@ final class TBVirtualDisplayModeMemory {
         return try? JSONDecoder().decode(Choice.self, from: data)
     }
 
+    func forget(key: String) {
+        UserDefaults.standard.removeObject(forKey: defaultsKey(key))
+    }
+
     /// Begin remembering mode changes for `displayID` under `key`, so the user's
     /// subsequent manual resolution changes are persisted.
     func track(displayID: CGDirectDisplayID, key: String, ignoringApplied applied: Choice? = nil) {

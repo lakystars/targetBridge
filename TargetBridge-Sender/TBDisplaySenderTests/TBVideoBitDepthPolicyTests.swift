@@ -28,6 +28,18 @@ final class TBVideoBitDepthPolicyTests: XCTestCase {
             extendedCaptureAvailable: false, override: nil))
     }
 
+    func testMirrorSourceStaysEightBit() {
+        XCTAssertFalse(TBVideoBitDepthPolicy.usesTenBit(
+            codecType: kCMVideoCodecType_HEVC, usesRawNV12: false, receiverSupportsMain10: true,
+            extendedCaptureAvailable: true, isExtendedDesktop: false, override: nil))
+    }
+
+    func testSettingOrConnectionFallbackDisablesTenBit() {
+        XCTAssertFalse(TBVideoBitDepthPolicy.usesTenBit(
+            codecType: kCMVideoCodecType_HEVC, usesRawNV12: false, receiverSupportsMain10: true,
+            extendedCaptureAvailable: true, enabled: false, override: nil))
+    }
+
     func testOverrideZeroDisablesTenBit() {
         XCTAssertFalse(TBVideoBitDepthPolicy.usesTenBit(
             codecType: kCMVideoCodecType_HEVC, usesRawNV12: false, receiverSupportsMain10: true, extendedCaptureAvailable: true, override: "0"))

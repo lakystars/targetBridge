@@ -79,6 +79,18 @@ final class TBDisplaySenderService: ObservableObject {
             objectWillChange.send()
         }
     }
+    @Published var tenBitColor: Bool = {
+        if UserDefaults.standard.object(forKey: "fd.tbdisplaysender.tenBitColor") == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: "fd.tbdisplaysender.tenBitColor")
+    }() {
+        didSet {
+            UserDefaults.standard.set(tenBitColor, forKey: "fd.tbdisplaysender.tenBitColor")
+            sessions.forEach { $0.tenBitColor = tenBitColor }
+            objectWillChange.send()
+        }
+    }
     @Published var preventDisplaySleep: Bool = {
         if UserDefaults.standard.object(forKey: "fd.tbdisplaysender.preventDisplaySleep") == nil {
             return true
@@ -247,7 +259,8 @@ final class TBDisplaySenderService: ObservableObject {
             requiresReceiverInputMonitoring: role == .receiverMaster,
             receiverInputMonitoringGranted: session.receiverInputMonitoringTrustedHint,
             requiresReceiverAccessibility: role == .senderMaster,
-            receiverAccessibilityGranted: session.receiverAccessibilityTrustedHint
+            receiverAccessibilityGranted: session.receiverAccessibilityTrustedHint,
+            colorDepth: session.colorDepthState
         )
         return TBConfigurationDiagnostics.checks(for: snapshot)
     }
@@ -257,6 +270,7 @@ final class TBDisplaySenderService: ObservableObject {
             language: language,
             largeCursor: largeCursor,
             lowLatencyCursor: lowLatencyCursor,
+            tenBitColor: tenBitColor,
             preventDisplaySleep: preventDisplaySleep,
             autoRestartOnWake: autoRestartOnWake,
             audioEnabled: audioEnabled,
@@ -419,6 +433,7 @@ final class TBDisplaySenderService: ObservableObject {
                 language: language,
                 largeCursor: largeCursor,
                 lowLatencyCursor: lowLatencyCursor,
+                tenBitColor: tenBitColor,
                 preventDisplaySleep: preventDisplaySleep,
                 autoRestartOnWake: autoRestartOnWake,
                 audioEnabled: audioEnabled,

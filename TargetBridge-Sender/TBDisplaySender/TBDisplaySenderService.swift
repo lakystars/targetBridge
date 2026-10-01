@@ -24,13 +24,19 @@ enum TBVideoBitDepthPolicy {
         return false
     }
 
+    /// - Parameters:
+    ///   - isExtendedDesktop: mirror mode captures the physical main display,
+    ///     which may be HDR/EDR, so it stays 8-bit.
+    ///   - enabled: the user setting and no per-connection fallback.
     static func usesTenBit(codecType: CMVideoCodecType,
                            usesRawNV12: Bool,
                            receiverSupportsMain10: Bool?,
                            extendedCaptureAvailable: Bool = platformSupportsExtendedCapture,
+                           isExtendedDesktop: Bool = true,
+                           enabled: Bool = true,
                            override: String?) -> Bool {
         if override == "0" { return false }
-        return extendedCaptureAvailable && !usesRawNV12 &&
+        return enabled && isExtendedDesktop && extendedCaptureAvailable && !usesRawNV12 &&
             codecType == kCMVideoCodecType_HEVC && receiverSupportsMain10 == true
     }
 }
@@ -1103,6 +1109,7 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
         language: TBDisplaySenderLanguage,
         largeCursor: Bool,
         lowLatencyCursor: Bool,
+        tenBitColor: Bool = true,
         preventDisplaySleep: Bool,
         autoRestartOnWake: Bool,
         audioEnabled: Bool,
@@ -1116,6 +1123,7 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
         self.language = language
         self.largeCursor = largeCursor
         self.lowLatencyCursor = lowLatencyCursor
+        self.tenBitColor = tenBitColor
         self.preventDisplaySleep = preventDisplaySleep
         self.autoRestartOnWake = autoRestartOnWake
         self.audioEnabled = audioEnabled
@@ -1246,6 +1254,13 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
     }
     @Published var largeCursor: Bool
     @Published var lowLatencyCursor: Bool
+    /// User setting for extended-precision capture with HEVC Main10.
+    @Published var tenBitColor: Bool
+    /// Why this connection fell back to 8-bit; cleared on the next connect.
+    private var tenBitFallback: TBColorDepthState?
+    private var tenBitWatchdogTrips = 0
+    @Published private(set) var colorDepthState: TBColorDepthState = .pending
+    private var lastRenegotiationAt: Date?
     /// Receiver-drawn cursor: on for the low-latency option or the large size.
     private var cursorOverlayEnabled: Bool { largeCursor || lowLatencyCursor }
     @Published var preventDisplaySleep: Bool = true
@@ -1535,6 +1550,9 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
 
     func connect() {
         guard connection == nil, !receiverIP.isEmpty, !localInterfaceIP.isEmpty else { return }
+        tenBitFallback = nil
+        tenBitWatchdogTrips = 0
+        colorDepthState = .pending
         connectTimeoutWorkItem?.cancel()
         connectTimeoutWorkItem = nil
         recvBuffer.removeAll(keepingCapacity: false)
@@ -1827,6 +1845,7 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             currentSession.destroy()
         }
         activeProfile = nil
+        colorDepthState = .pending
         activeCodecType = nil
         activeCodecName = nil
         isConnected = false
@@ -2127,6 +2146,22 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             case .heartbeat:
                 break
             case .teardown:
+                let reason = TBMonitorProtocol.decodeJSON(TBMonitorTeardown.self, from: payload)?.reason
+                if reason == "renegotiate", lastRenegotiationAt.map({ Date().timeIntervalSince($0) > 60 }) ?? true {
+                    // The receiver changed what it can display (e.g. Main10 off);
+                    // reconnect once so the new display profile is negotiated.
+                    lastRenegotiationAt = Date()
+                    TBLog.connection.notice("connect: receiver requested renegotiation, reconnecting")
+                    stop(resetStatusTo: .connecting(receiverDisplayName))
+                    let generation = captureRestartGeneration
+                    Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        // A user Stop or receiver change in the meantime wins.
+                        guard let self, self.captureRestartGeneration == generation, self.connection == nil else { return }
+                        self.connect()
+                    }
+                    return
+                }
                 setStatus(.receiverTerminatedSession)
                 stop(resetStatusTo: nil)
                 return
@@ -2639,8 +2674,22 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
                 codecType: codecType,
                 usesRawNV12: usesRawNV12,
                 receiverSupportsMain10: profile.supportsHEVCMain10,
+                isExtendedDesktop: captureSource == .extendedDesktop,
+                enabled: tenBitColor && tenBitFallback == nil,
                 override: ProcessInfo.processInfo.environment["TB_HEVC_10BIT"]
             )
+            if usesTenBit {
+                colorDepthState = .tenBit
+            } else if !tenBitColor {
+                colorDepthState = .offInSettings
+            } else if let tenBitFallback {
+                colorDepthState = tenBitFallback
+            } else if codecType == kCMVideoCodecType_HEVC, captureSource == .extendedDesktop,
+                      !usesRawNV12, profile.supportsHEVCMain10 != true {
+                colorDepthState = .receiverUnsupported
+            } else {
+                colorDepthState = .eightBitSource
+            }
             let codecName = usesRawNV12 ? "NV12 RAW" : codecName(for: codecType)
             activeCodecType = usesRawNV12 ? nil : codecType
             activeCodecName = codecName
@@ -2777,6 +2826,8 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
                 TBLog.connection.warning("capture: extended-range capture failed (\(error.localizedDescription, privacy: .public)), retrying 8-bit")
                 stream = try makeStream(makeConfiguration(tenBit: false))
                 try await stream.startCapture()
+                tenBitFallback = .fallbackCaptureRejected
+                colorDepthState = .fallbackCaptureRejected
             }
             scStream = stream
             isStreaming = true
@@ -3499,6 +3550,14 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             NSLog("TargetBridge: capture health state=%@ frames=%llu idleEvents=%llu", health.state.rawValue, health.frameCount, health.idleCount)
         }
         guard health.shouldRestart(now: now) else { return }
+        if pipeline.usesTenBit {
+            tenBitWatchdogTrips += 1
+            if tenBitWatchdogTrips >= 2, tenBitFallback == nil {
+                // Repeated stalls with extended-range capture: restart in 8-bit.
+                tenBitFallback = .fallbackStalls
+                TBLog.connection.warning("capture: repeated stalls with 10-bit capture, using 8-bit for this connection")
+            }
+        }
         NSLog("TargetBridge: capture watchdog tripped — state=%@ frames=%llu idleEvents=%llu", health.state.rawValue, health.frameCount, health.idleCount)
         scheduleCaptureRestart(reason: "watchdog (\(health.state.rawValue))", delaySeconds: 0.5, onlyIfUnhealthy: true)
     }
@@ -3545,7 +3604,10 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
         isStreaming && activeProfile != nil && !isRestartingCaptureAfterWake
     }
 
-    private func scheduleCaptureRestart(reason: String, delaySeconds: Double, onlyIfUnhealthy: Bool = false) {
+    private func scheduleCaptureRestart(reason: String,
+                                        delaySeconds: Double,
+                                        onlyIfUnhealthy: Bool = false,
+                                        afterRestart: (@MainActor () -> Void)? = nil) {
         guard isStreaming, !isRestartingCaptureAfterWake, let profile = activeProfile, let scheduledPipeline = pipeline else { return }
         isRestartingCaptureAfterWake = true
         captureRestartGeneration &+= 1
@@ -3569,6 +3631,7 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             }
             NSLog("TargetBridge: \(reason) — soft restart of capture pipeline")
             await self.softRestartCapture(for: profile)
+            afterRestart?()
         }
     }
 
@@ -3661,6 +3724,16 @@ final class TBDisplaySenderSession: NSObject, ObservableObject, Identifiable, @u
             guard let self else { return }
             MainActor.assumeIsolated {
                 guard isStreaming, !sessionAckSent else { return }
+                if self.pipeline?.usesTenBit == true, self.tenBitFallback == nil, self.connection != nil {
+                    // No frame from extended-range capture: retry this connection in 8-bit.
+                    TBLog.connection.warning("capture: no first frame with 10-bit capture, retrying in 8-bit")
+                    self.tenBitFallback = .fallbackNoFrames
+                    self.scheduleCaptureRestart(reason: "10-bit first-frame timeout", delaySeconds: 0) { [weak self] in
+                        guard let self, self.isStreaming else { return }
+                        self.startFirstFrameWatchdog()
+                    }
+                    return
+                }
                 let sentFrames = self.pipeline?.sentFramesSnapshot ?? 0
                 TBLog.connection.error("capture: first-frame timeout preset=\(self.capturePreset.rawValue, privacy: .public) source=\(String(describing: self.captureSource), privacy: .public) connected=\(self.isConnected, privacy: .public) sentFrames=\(sentFrames, privacy: .public)")
                 if self.capturePreset == .retina4k60 || self.capturePreset == .native5k || self.capturePreset == .native5k60Experimental {

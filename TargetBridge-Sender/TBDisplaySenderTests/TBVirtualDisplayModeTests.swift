@@ -9,8 +9,8 @@ final class TBVirtualDisplayModeTests: XCTestCase {
             TBDisplayModeCandidate(width: 2560, height: 1440, pixelWidth: 2560, refreshRate: 60),
             TBDisplayModeCandidate(width: 2560, height: 1440, pixelWidth: 5120, refreshRate: 60)
         ]
-        let index = ReceiverBackedVirtualDisplaySession.preferredCandidateIndex(
-            candidates, mode: mode, hiDPI: true, refreshRate: 60)
+        let index = ReceiverBackedVirtualDisplaySession.preferredCandidateOrder(
+            candidates, mode: mode, hiDPI: true, refreshRate: 60).first
         XCTAssertEqual(index, 1)
     }
 
@@ -19,8 +19,8 @@ final class TBVirtualDisplayModeTests: XCTestCase {
             TBDisplayModeCandidate(width: 2560, height: 1440, pixelWidth: 5120, refreshRate: 60),
             TBDisplayModeCandidate(width: 2560, height: 1440, pixelWidth: 2560, refreshRate: 60)
         ]
-        let index = ReceiverBackedVirtualDisplaySession.preferredCandidateIndex(
-            candidates, mode: mode, hiDPI: false, refreshRate: 60)
+        let index = ReceiverBackedVirtualDisplaySession.preferredCandidateOrder(
+            candidates, mode: mode, hiDPI: false, refreshRate: 60).first
         XCTAssertEqual(index, 1)
     }
 
@@ -30,15 +30,24 @@ final class TBVirtualDisplayModeTests: XCTestCase {
             TBDisplayModeCandidate(width: 1920, height: 1080, pixelWidth: 3840, refreshRate: 60),
             TBDisplayModeCandidate(width: 2560, height: 1440, pixelWidth: 5120, refreshRate: 60)
         ]
-        let index = ReceiverBackedVirtualDisplaySession.preferredCandidateIndex(
-            candidates, mode: mode, hiDPI: true, refreshRate: 60)
+        let index = ReceiverBackedVirtualDisplaySession.preferredCandidateOrder(
+            candidates, mode: mode, hiDPI: true, refreshRate: 60).first
         XCTAssertEqual(index, 2)
     }
 
     func testNoMatchingPointSizeReturnsNil() {
         let candidates = [TBDisplayModeCandidate(width: 1920, height: 1080, pixelWidth: 3840, refreshRate: 60)]
-        XCTAssertNil(ReceiverBackedVirtualDisplaySession.preferredCandidateIndex(
-            candidates, mode: mode, hiDPI: true, refreshRate: 60))
+        XCTAssertTrue(ReceiverBackedVirtualDisplaySession.preferredCandidateOrder(
+            candidates, mode: mode, hiDPI: true, refreshRate: 60).isEmpty)
+    }
+
+    func testFallbackOrderKeepsLowResolutionVariantAfterHiDPI() {
+        let candidates = [
+            TBDisplayModeCandidate(width: 2560, height: 1440, pixelWidth: 2560, refreshRate: 60),
+            TBDisplayModeCandidate(width: 2560, height: 1440, pixelWidth: 5120, refreshRate: 60)
+        ]
+        XCTAssertEqual(ReceiverBackedVirtualDisplaySession.preferredCandidateOrder(
+            candidates, mode: mode, hiDPI: true, refreshRate: 60), [1, 0])
     }
 
     func testModeChoiceMatchesIgnoringRefreshRate() {

@@ -399,6 +399,10 @@ enum TBDisplaySenderL10n {
         text("sender.toggle.low_latency_cursor", language)
     }
 
+    static func tenBitColor(_ language: TBDisplaySenderLanguage) -> String {
+        text("sender.toggle.ten_bit_color", language)
+    }
+
     static func preventDisplaySleep(_ language: TBDisplaySenderLanguage) -> String {
         text("sender.toggle.prevent_display_sleep", language)
     }

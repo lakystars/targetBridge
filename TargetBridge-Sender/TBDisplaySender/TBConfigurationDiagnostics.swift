@@ -14,6 +14,20 @@ struct TBConfigurationCheck: Identifiable, Equatable {
     let values: [String: String]
 }
 
+/// Color depth of the current stream, shown in the guided configuration check.
+enum TBColorDepthState: Equatable {
+    case pending
+    case tenBit
+    case offInSettings
+    case receiverUnsupported
+    /// H.264 preset, mirror source, RAW or a platform without extended capture.
+    case eightBitSource
+    case fallbackNoFrames
+    case fallbackStalls
+    /// Extended-range capture was rejected on this Mac; capture runs in 8-bit.
+    case fallbackCaptureRejected
+}
+
 struct TBConfigurationDiagnosticSnapshot {
     var hasScreenRecording: Bool
     var transportIsThunderbolt: Bool
@@ -31,6 +45,7 @@ struct TBConfigurationDiagnosticSnapshot {
     var receiverInputMonitoringGranted: Bool?
     var requiresReceiverAccessibility: Bool
     var receiverAccessibilityGranted: Bool?
+    var colorDepth: TBColorDepthState = .pending
 }
 
 enum TBConfigurationDiagnostics {
@@ -40,7 +55,8 @@ enum TBConfigurationDiagnostics {
             localLinkCheck(snapshot),
             check("receiver_address", snapshot.receiverAddress.isEmpty ? .attention : .passed, "sender.diagnostics.receiver_address", snapshot.receiverAddress.isEmpty ? "sender.diagnostics.receiver_address_missing" : "sender.diagnostics.receiver_address_ready"),
             receiverCheck(snapshot),
-            cableCheck(snapshot)
+            cableCheck(snapshot),
+            colorDepthCheck(snapshot)
         ]
         appendInputChecks(to: &checks, snapshot: snapshot)
         return checks
@@ -70,6 +86,28 @@ enum TBConfigurationDiagnostics {
             return check("receiver_profile", .pending, "sender.diagnostics.hevc", "sender.diagnostics.hevc_pending")
         }
         return check("receiver_profile", supportsHEVC ? .passed : .attention, "sender.diagnostics.hevc", supportsHEVC ? "sender.diagnostics.hevc_ready" : "sender.diagnostics.hevc_missing")
+    }
+
+    private static func colorDepthCheck(_ snapshot: TBConfigurationDiagnosticSnapshot) -> TBConfigurationCheck {
+        let title = "sender.diagnostics.color_depth"
+        switch snapshot.colorDepth {
+        case .pending:
+            return check("color_depth", .pending, title, "sender.diagnostics.color_depth_pending")
+        case .tenBit:
+            return check("color_depth", .passed, title, "sender.diagnostics.color_depth_ten_bit")
+        case .offInSettings:
+            return check("color_depth", .passed, title, "sender.diagnostics.color_depth_off_setting")
+        case .receiverUnsupported:
+            return check("color_depth", .passed, title, "sender.diagnostics.color_depth_receiver_unsupported")
+        case .eightBitSource:
+            return check("color_depth", .passed, title, "sender.diagnostics.color_depth_eight_bit")
+        case .fallbackNoFrames:
+            return check("color_depth", .attention, title, "sender.diagnostics.color_depth_fallback_no_frames")
+        case .fallbackStalls:
+            return check("color_depth", .attention, title, "sender.diagnostics.color_depth_fallback_stalls")
+        case .fallbackCaptureRejected:
+            return check("color_depth", .attention, title, "sender.diagnostics.color_depth_capture_rejected")
+        }
     }
 
     private static func cableCheck(_ snapshot: TBConfigurationDiagnosticSnapshot) -> TBConfigurationCheck {

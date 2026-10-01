@@ -30,6 +30,21 @@ final class TBConfigurationDiagnosticsTests: XCTestCase {
         XCTAssertEqual(check?.detailKey, "sender.diagnostics.local_link_missing")
     }
 
+    func testColorDepthFallbackNeedsAttention() {
+        var snapshot = baseSnapshot()
+        snapshot.colorDepth = .fallbackNoFrames
+        let check = TBConfigurationDiagnostics.checks(for: snapshot).first(where: { $0.id == "color_depth" })
+        XCTAssertEqual(check?.state, .attention)
+        XCTAssertEqual(check?.detailKey, "sender.diagnostics.color_depth_fallback_no_frames")
+    }
+
+    func testColorDepthTenBitPasses() {
+        var snapshot = baseSnapshot()
+        snapshot.colorDepth = .tenBit
+        let check = TBConfigurationDiagnostics.checks(for: snapshot).first(where: { $0.id == "color_depth" })
+        XCTAssertEqual(check?.state, .passed)
+    }
+
     func testReceiverControlChecksBothSidesOfInputRelay() {
         let checks = TBConfigurationDiagnostics.checks(for: baseSnapshot(requiresSenderAccessibility: true, senderAccessibilityGranted: false, requiresReceiverInputMonitoring: true, receiverInputMonitoringGranted: false))
 
