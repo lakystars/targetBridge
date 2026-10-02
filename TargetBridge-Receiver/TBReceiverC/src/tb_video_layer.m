@@ -52,7 +52,7 @@ struct tb_video_layer {
     double cursor_x;
     double cursor_y;
     int cursor_visible;
-    CGSize cursor_bounds;
+    CGRect cursor_rect;
     int cursor_source_w;
     int cursor_large;
     /* Native cursor bitmap mode: geometry in source pixels, applied per scale. */
@@ -119,7 +119,8 @@ struct tb_video_layer *tb_vlayer_create(void *nswindow, void *metal_layer) {
     root.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
 
     AVSampleBufferDisplayLayer *layer = [AVSampleBufferDisplayLayer layer];
-    layer.videoGravity = AVLayerVideoGravityResize;
+    /* Keep the stream's aspect ratio; letterbox when the view differs */
+    layer.videoGravity = AVLayerVideoGravityResizeAspect;
     layer.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
     layer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
     [root addSublayer:layer];
@@ -396,6 +397,13 @@ void tb_vlayer_set_cursor_image(struct tb_video_layer *v, const uint8_t *argb,
     CGColorSpaceRelease(space);
 }
 
+/* Area the video occupies inside the view, matching ResizeAspect */
+static CGRect tb_vlayer_video_rect(struct tb_video_layer *v) {
+    CGRect bounds = v->root.bounds;
+    if (v->width <= 0 || v->height <= 0) return bounds;
+    return AVMakeRectWithAspectRatioInsideRect(CGSizeMake(v->width, v->height), bounds);
+}
+
 void tb_vlayer_set_cursor(struct tb_video_layer *v, double x_norm, double y_norm, int visible,
                           int source_w, int large) {
     if (!v) return;
@@ -404,14 +412,14 @@ void tb_vlayer_set_cursor(struct tb_video_layer *v, double x_norm, double y_norm
     v->cursor_visible = visible;
     v->cursor_source_w = source_w;
     v->cursor_large = large;
-    CGRect bounds = v->root.bounds;
-    v->cursor_bounds = bounds.size;
+    CGRect video = tb_vlayer_video_rect(v);
+    v->cursor_rect = video;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     /* source_w of 1 is the display's "no cursor yet" placeholder. */
     if (v->cursor_image_mode && source_w > 1) {
         /* Source pixels map to view points by the same ratio as the video. */
-        double scale = bounds.size.width / source_w * (large ? 1.8 : 1.0);
+        double scale = video.size.width / source_w * (large ? 1.8 : 1.0);
         if (scale != v->cursor_image_scale) {
             v->cursor_image_scale = scale;
             v->cursor.bounds = CGRectMake(0, 0, v->cursor_image_size.width * scale,
@@ -419,15 +427,15 @@ void tb_vlayer_set_cursor(struct tb_video_layer *v, double x_norm, double y_norm
         }
     }
     v->cursor.hidden = (visible && v->cursor_dim > 0) ? NO : YES;
-    v->cursor.position = CGPointMake(x_norm * bounds.size.width,
-                                     (1.0 - y_norm) * bounds.size.height);
+    v->cursor.position = CGPointMake(video.origin.x + x_norm * video.size.width,
+                                     video.origin.y + (1.0 - y_norm) * video.size.height);
     [CATransaction commit];
 }
 
 void tb_vlayer_refresh_cursor(struct tb_video_layer *v) {
     if (!v) return;
-    /* Bounds changed (e.g. fullscreen): re-apply the last position. */
-    if (CGSizeEqualToSize(v->root.bounds.size, v->cursor_bounds)) return;
+    /* View or stream size changed (e.g. fullscreen): re-apply the last position */
+    if (CGRectEqualToRect(tb_vlayer_video_rect(v), v->cursor_rect)) return;
     tb_vlayer_set_cursor(v, v->cursor_x, v->cursor_y, v->cursor_visible,
                          v->cursor_source_w, v->cursor_large);
 }

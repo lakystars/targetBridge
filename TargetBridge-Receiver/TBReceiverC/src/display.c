@@ -756,6 +756,20 @@ static void draw_scaled_rect(SDL_Renderer *ren, int cx, int cy, int size, int rx
     SDL_RenderFillRect(ren, &r);
 }
 
+/* Aspect-fit area for the video texture; letterbox when the output differs */
+static SDL_Rect tb_disp_video_rect(const struct tb_display *d, int out_w, int out_h) {
+    SDL_Rect r = { 0, 0, out_w, out_h };
+    if (d->tex_w <= 0 || d->tex_h <= 0 || out_w <= 0 || out_h <= 0) return r;
+    if ((int64_t)out_w * d->tex_h > (int64_t)out_h * d->tex_w) {
+        r.w = (int)((int64_t)out_h * d->tex_w / d->tex_h);
+        r.x = (out_w - r.w) / 2;
+    } else {
+        r.h = (int)((int64_t)out_w * d->tex_h / d->tex_w);
+        r.y = (out_h - r.h) / 2;
+    }
+    return r;
+}
+
 static int tb_disp_cursor_size(int large, int out_w) {
     return large ? (out_w >= 5000 ? 58 : 44) : (out_w >= 5000 ? 32 : 24);
 }
@@ -770,10 +784,11 @@ static void tb_disp_draw_cursor(struct tb_display *d) {
         return;
     }
 
-    const double sx = (double)out_w / (double)d->cursor_source_w;
-    const double sy = (double)out_h / (double)d->cursor_source_h;
-    const int x = (int)((double)d->cursor_x * sx);
-    const int y = (int)((double)d->cursor_y * sy);
+    const SDL_Rect video = tb_disp_video_rect(d, out_w, out_h);
+    const double sx = (double)video.w / (double)d->cursor_source_w;
+    const double sy = (double)video.h / (double)d->cursor_source_h;
+    const int x = video.x + (int)((double)d->cursor_x * sx);
+    const int y = video.y + (int)((double)d->cursor_y * sy);
     tb_disp_draw_cursor_shape(d, x, y, tb_disp_cursor_size(d->cursor_large, out_w));
 }
 
@@ -1149,7 +1164,13 @@ static void tb_disp_render_current(struct tb_display *d) {
     if (!d || d->external_video || !d->tex) return;
     SDL_SetRenderDrawColor(d->ren, 0, 0, 0, 255);
     SDL_RenderClear(d->ren);
-    SDL_RenderCopy(d->ren, d->tex, NULL, NULL);
+    int out_w = 0, out_h = 0;
+    if (SDL_GetRendererOutputSize(d->ren, &out_w, &out_h) == 0 && out_w > 0 && out_h > 0) {
+        const SDL_Rect video = tb_disp_video_rect(d, out_w, out_h);
+        SDL_RenderCopy(d->ren, d->tex, NULL, &video);
+    } else {
+        SDL_RenderCopy(d->ren, d->tex, NULL, NULL);
+    }
     tb_disp_draw_cursor(d);
     SDL_RenderPresent(d->ren);
 }
