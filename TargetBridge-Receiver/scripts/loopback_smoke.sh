@@ -40,6 +40,20 @@ expect_log() {
     return 1
 }
 
+# Passes when any of the needles shows up; usage: expect_any_log what needle...
+expect_any_log() {
+    local what="$1" tries=0 needle
+    shift
+    while (( tries < 20 )); do
+        for needle in "$@"; do
+            if grep -qF "$needle" "$LOG"; then pass "$what"; return 0; fi
+        done
+        sleep 0.5; tries=$((tries + 1))
+    done
+    fail "$what (missing log line: $*)"
+    return 1
+}
+
 cleanup() {
     [[ -n "$RECEIVER_PID" ]] && kill "$RECEIVER_PID" 2>/dev/null
     wait 2>/dev/null
@@ -84,7 +98,8 @@ if (( NO_STREAM )) || ! command -v ffmpeg >/dev/null; then
 else
     python3 "$MOCK" --mode stream --duration 4 || fail "mock stream exited non-zero"
     expect_log "param sets changed, opening decoder" "decoder accepted param sets"
-    expect_log "[disp] texture " "receiver rendered decoded video"
+    # SDL path logs a texture; the AVSampleBufferDisplayLayer path logs its format
+    expect_any_log "receiver rendered decoded video" "[disp] texture " "[vlayer] format "
 fi
 
 print ""
