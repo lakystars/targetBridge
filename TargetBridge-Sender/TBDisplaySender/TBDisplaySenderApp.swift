@@ -41,6 +41,9 @@ struct TBDisplaySenderApp: App {
                 .onOpenURL { url in
                     TBSenderAutomation.handle(url: url)
                 }
+                // Route targetbridge:// URLs to the open window; without this
+                // SwiftUI opens a new window for every URL.
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         }
         .defaultSize(width: 860, height: 860)
         .commands {
